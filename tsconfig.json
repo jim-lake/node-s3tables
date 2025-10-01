@@ -1,0 +1,114 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "lib": ["es2022"],
+    "allowJs": false,
+    "checkJs": false,
+    "module": "esnext",
+    "skipLibCheck": false,
+    "skipDefaultLibCheck": false,
+    "declaration": false,
+    "declarationMap": false,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": false,
+    "sourceMap": true,
+    "inlineSourceMap": false,
+    "inlineSources": false,
+    "baseUrl": ".",
+    "outDir": "dist",
+    "rootDir": ".",
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+    "paths": { "*": ["node_modules/*"] },
+    "jsx": "react-jsx",
+    "incremental": false,
+    "noEmit": true,
+
+    // Strict Type Checking - MAXIMUM STRICTNESS
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "strictBindCallApply": true,
+    "strictPropertyInitialization": true,
+    "noImplicitThis": true,
+    "useUnknownInCatchVariables": true,
+    "alwaysStrict": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noUncheckedIndexedAccess": true,
+
+    // Additional Checks - MAXIMUM STRICTNESS
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true,
+
+    // Advanced - MAXIMUM STRICTNESS
+    "forceConsistentCasingInFileNames": true,
+    "allowUnreachableCode": false,
+    "allowUnusedLabels": false,
+    "noImplicitUseStrict": false,
+    "suppressExcessPropertyErrors": false,
+    "suppressImplicitAnyIndexErrors": false,
+    "disableSizeLimit": false,
+    "noStrictGenericChecks": false,
+    "keyofStringsOnly": false,
+    "preserveConstEnums": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": false,
+
+    // Emit - STRICT SETTINGS
+    "noEmitOnError": true,
+    "preserveWatchOutput": false,
+    "pretty": true,
+    "removeComments": false,
+    "downlevelIteration": false,
+    "importHelpers": false,
+    "preserveValueImports": false,
+
+    // Interop Constraints - STRICT
+    "allowUmdGlobalAccess": false,
+
+    // Language and Environment - STRICT
+    "experimentalDecorators": false,
+    "emitDecoratorMetadata": false,
+    "useDefineForClassFields": true,
+
+    // Compiler Diagnostics - MAXIMUM VERBOSITY
+    "diagnostics": false,
+    "explainFiles": false,
+    "extendedDiagnostics": false,
+    "listEmittedFiles": false,
+    "listFiles": false,
+    "traceResolution": false,
+
+    // Projects - STRICT
+    "composite": false,
+    "disableReferencedProjectLoad": false,
+    "disableSolutionSearching": false,
+    "disableSourceOfProjectReferenceRedirect": false,
+
+    // Output Formatting - STRICT
+    "noErrorTruncation": true,
+    "preserveWatchOutput": false,
+    "pretty": true,
+
+    // Watch and Build Modes - STRICT
+    "assumeChangesOnlyAffectDirectDependencies": false
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/*.spec.ts",
+    "example/**/*",
+    "**/*.js",
+    "**/*.mjs",
+    "**/*.cjs"
+  ],
+  "compileOnSave": false,
+  "ts-node": { "esm": false, "experimentalSpecifierResolution": "node" }
+}
