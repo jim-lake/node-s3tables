@@ -19,7 +19,6 @@ export async function icebergRequest(params: GetParams): Promise<string> {
   if (!region) {
     throw new Error('bad tableBucketARN');
   }
-  console.log('region:', region);
   const arn = encodeURIComponent(params.tableBucketARN);
   const hostname = `s3tables.${region}.amazonaws.com`;
   const full_path = `/iceberg/v1/${arn}${params.suffix}`;
@@ -39,7 +38,6 @@ export async function icebergRequest(params: GetParams): Promise<string> {
   }
 
   const request = new HttpRequest(req_opts);
-  console.log('request:', request);
   const signer = new SignatureV4({
     credentials: params.credentials ?? defaultProvider(),
     region,
@@ -47,19 +45,16 @@ export async function icebergRequest(params: GetParams): Promise<string> {
     sha256: Sha256,
   });
   const signed = await signer.sign(request);
-  console.log('signed:', signed);
   const url = `https://${hostname}${signed.path}`;
-  console.log('url:', url);
   const fetch_opts: Parameters<typeof fetch>[1] = {
     method: signed.method,
     headers: signed.headers as Record<string, string>,
   };
   if (signed.body) {
-    fetch_opts.body = signed.body;
+    fetch_opts.body = signed.body as string;
   }
   const res = await fetch(url, fetch_opts);
   if (!res.ok) {
-    console.log('body:', await res.text());
     throw new Error(`request failed: ${res.status} ${res.statusText}`);
   }
   return (await res.json()) as string;

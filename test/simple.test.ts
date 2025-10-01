@@ -34,12 +34,7 @@ void test('update table schema', async () => {
         required: false,
         type: 'string' as const,
       },
-      {
-        id: 5,
-        name: 'details',
-        required: false,
-        type: 'string' as const,
-      },
+      { id: 5, name: 'details', required: false, type: 'string' as const },
     ],
   };
   const result = await addSchema(opts);

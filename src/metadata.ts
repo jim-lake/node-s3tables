@@ -27,11 +27,10 @@ export async function getMetadata(
   const client = new S3TablesClient(config ?? {});
   const get_table_cmd = new GetTableCommand(other);
   const response = await client.send(get_table_cmd);
-  console.log(response);
   if (!response.metadataLocation) {
     throw new Error('missing metadataLocation');
   }
-  const s3_client = new S3Client(config as unknown ?? {});
+  const s3_client = new S3Client((config as unknown) ?? {});
   const { key, bucket } = _parseS3Url(response.metadataLocation);
   const get_file_cmd = new GetObjectCommand({ Bucket: bucket, Key: key });
   const file_response = await s3_client.send(get_file_cmd);
@@ -39,7 +38,7 @@ export async function getMetadata(
   if (!body) {
     throw new Error('missing body');
   }
-  return JSON.parse(body);
+  return JSON.parse(body) as IcebergMetadata;
 }
 export interface AddSchemaParams {
   credentials?: AwsCredentialIdentity;
@@ -78,7 +77,7 @@ export interface AddPartitionSpecParams {
   specId: number;
   fields: IcebergPartitionField[];
 }
-export function addPartitionSpec(params: AddPartitionSpecParams) {
+export async function addPartitionSpec(params: AddPartitionSpecParams) {
   return icebergRequest({
     tableBucketARN: params.tableBucketARN,
     method: 'POST',
@@ -100,8 +99,9 @@ export function addPartitionSpec(params: AddPartitionSpecParams) {
   });
 }
 
+const S3_REGEX = /^s3:\/\/([^/]+)\/(.+)$/;
 function _parseS3Url(url: string) {
-  const match = url.match(/^s3:\/\/([^\/]+)\/(.+)$/);
+  const match = S3_REGEX.exec(url);
   if (!match) {
     throw new Error('Invalid S3 URL');
   }

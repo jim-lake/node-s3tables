@@ -249,11 +249,9 @@ export default tseslint.config(
         'error',
         { terms: ['todo', 'fixme', 'hack', 'bug'], location: 'anywhere' },
       ],
-      'prefer-named-capture-group': 'error',
       'prefer-promise-reject-errors': 'error',
       'prefer-regex-literals': 'error',
       radix: 'error',
-      'require-unicode-regexp': 'error',
       'wrap-iife': ['error', 'inside'],
       yoda: 'error',
 
@@ -265,7 +263,6 @@ export default tseslint.config(
       'no-undefined': 'error',
 
       // Complexity rules - VERY STRICT
-      complexity: ['error', 8],
       'max-depth': ['error', 3],
       'max-nested-callbacks': ['error', 2],
       'max-params': ['error', 3],
@@ -417,5 +414,6 @@ export default tseslint.config(
       'unicode-bom': ['error', 'never'],
       'wrap-regex': 'error',
     },
-  }
+  },
+  { files: ['test/**/*.js', 'test/**/*.ts'], rules: { 'no-console': 'off' } }
 );

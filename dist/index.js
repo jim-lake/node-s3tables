@@ -14,7 +14,6 @@ async function icebergRequest(params) {
     if (!region) {
         throw new Error('bad tableBucketARN');
     }
-    console.log('region:', region);
     const arn = encodeURIComponent(params.tableBucketARN);
     const hostname = `s3tables.${region}.amazonaws.com`;
     const full_path = `/iceberg/v1/${arn}${params.suffix}`;
@@ -32,7 +31,6 @@ async function icebergRequest(params) {
         req_opts.headers['content-length'] = String(Buffer.byteLength(body));
     }
     const request = new protocolHttp.HttpRequest(req_opts);
-    console.log('request:', request);
     const signer = new signatureV4.SignatureV4({
         credentials: params.credentials ?? credentialProviderNode.defaultProvider(),
         region,
@@ -40,9 +38,7 @@ async function icebergRequest(params) {
         sha256: sha256Js.Sha256,
     });
     const signed = await signer.sign(request);
-    console.log('signed:', signed);
     const url = `https://${hostname}${signed.path}`;
-    console.log('url:', url);
     const fetch_opts = {
         method: signed.method,
         headers: signed.headers,
@@ -52,7 +48,6 @@ async function icebergRequest(params) {
     }
     const res = await fetch(url, fetch_opts);
     if (!res.ok) {
-        console.log('body:', await res.text());
         throw new Error(`request failed: ${res.status} ${res.statusText}`);
     }
     return (await res.json());
@@ -63,7 +58,6 @@ async function getMetadata(params) {
     const client = new clientS3tables.S3TablesClient(config ?? {});
     const get_table_cmd = new clientS3tables.GetTableCommand(other);
     const response = await client.send(get_table_cmd);
-    console.log(response);
     if (!response.metadataLocation) {
         throw new Error('missing metadataLocation');
     }
@@ -98,7 +92,7 @@ async function addSchema(params) {
         },
     });
 }
-function addPartitionSpec(params) {
+async function addPartitionSpec(params) {
     return icebergRequest({
         tableBucketARN: params.tableBucketARN,
         method: 'POST',
@@ -119,8 +113,9 @@ function addPartitionSpec(params) {
         },
     });
 }
+const S3_REGEX = /^s3:\/\/([^/]+)\/(.+)$/;
 function _parseS3Url(url) {
-    const match = url.match(/^s3:\/\/([^\/]+)\/(.+)$/);
+    const match = S3_REGEX.exec(url);
     if (!match) {
         throw new Error('Invalid S3 URL');
     }
