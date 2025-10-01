@@ -415,5 +415,11 @@ export default tseslint.config(
       'wrap-regex': 'error',
     },
   },
-  { files: ['test/**/*.js', 'test/**/*.ts'], rules: { 'no-console': 'off' } }
+  {
+    files: ['test/**/*.js', 'test/**/*.ts'],
+    rules: {
+      'no-console': 'off',
+      '@typescript-eslint/non-nullable-type-assertion-style': 'off',
+    },
+  }
 );

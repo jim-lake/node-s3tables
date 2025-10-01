@@ -3,11 +3,9 @@ import * as util from 'node:util';
 
 import { getMetadata, addSchema, addPartitionSpec } from '../src';
 
-const TABLE_ARN =
-  'arn:aws:s3tables:us-west-2:298262171104:bucket/dc-test-table-bucket/table/cd431039-6e5a-4039-a9c8-e47f24b53440';
-const TABLE_BUCKET_ARN =
-  'arn:aws:s3tables:us-west-2:298262171104:bucket/dc-test-table-bucket';
-const NAMESPACE = 'dc_test_table_bucket_namespace';
+const TABLE_ARN = process.env['TABLE_ARN'] as string;
+const TABLE_BUCKET_ARN = process.env['TABLE_BUCKET_ARN'] as string;
+const NAMESPACE = process.env['TABLE_NAMESPACE'] as string;
 
 void test('get metadata by table arn', async () => {
   const result = await getMetadata({ tableArn: TABLE_ARN });
