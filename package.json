@@ -12,8 +12,8 @@
     "ts-check": "tsc --noEmit",
     "lint": "eslint src test",
     "pretty": "prettier -u --write \"**/*\" --log-level warn",
-    "test": "node --import tsx --test test/*.test.ts",
-    "test:cover": "node --import tsx --test --experimental-test-coverage test/*.test.ts"
+    "test": "dotenv -- tsx --test test/*.test.ts",
+    "test:cover": "dotenv -- tsx --test --experimental-test-coverage test/*.test.ts"
   },
   "repository": {
     "type": "git",
@@ -35,6 +35,7 @@
     "@rollup/plugin-node-resolve": "^16.0.1",
     "@rollup/plugin-typescript": "^12.1.4",
     "@types/node": "^24.6.0",
+    "dotenv-cli": "^10.0.0",
     "eslint": "^9.36.0",
     "eslint-plugin-import": "^2.32.0",
     "rollup": "^4.52.3",
