@@ -11,7 +11,7 @@ npm install node-s3tables
 ## Quick Start
 
 ```javascript
-import { getMetadata, addSchema, addPartitionSpec } from 'node-s3tables';
+import { getMetadata, addSchema, addPartitionSpec, addDataFiles, setCurrentCommit } from 'node-s3tables';
 
 // Get table metadata
 const metadata = await getMetadata({
@@ -128,6 +128,62 @@ await addPartitionSpec({
 });
 ```
 
+### addDataFiles(params)
+
+Adds data files to an S3 table by creating a new snapshot.
+
+**Parameters:**
+
+- `params.tableBucketARN` (string) - The ARN of the table bucket
+- `params.namespace` (string) - The namespace name
+- `params.name` (string) - The table name
+- `params.file` (string) - S3 URL of the data file to add
+- `params.specId` (number) - The partition spec ID to use
+- `params.schemaId` (number) - The schema ID to use
+- `params.partitions` (PartitionRecord) - Partition values for the data file
+- `params.fileSize` (bigint) - Size of the data file in bytes
+- `params.recordCount` (bigint) - Number of records in the data file
+- `params.credentials` (AwsCredentialIdentity, optional) - AWS credentials
+
+**Returns:** Promise<string>
+
+```javascript
+await addDataFiles({
+  tableBucketARN: 'arn:aws:s3tables:us-west-2:123456789012:bucket/my-bucket',
+  namespace: 'sales',
+  name: 'daily_sales',
+  file: 's3://my-bucket/data/sales-2024-01-01.parquet',
+  schemaId: 2,
+  specId: 1,
+  partitions: { sale_date_day: '2024-01-01' },
+  recordCount: 1000n,
+  fileSize: 52428n,
+});
+```
+
+### setCurrentCommit(params)
+
+Sets the current commit/snapshot for an S3 table.
+
+**Parameters:**
+
+- `params.tableBucketARN` (string) - The ARN of the table bucket
+- `params.namespace` (string) - The namespace name
+- `params.name` (string) - The table name
+- `params.snapshotId` (bigint) - The snapshot ID to set as current
+- `params.credentials` (AwsCredentialIdentity, optional) - AWS credentials
+
+**Returns:** Promise<string>
+
+```javascript
+await setCurrentCommit({
+  tableBucketARN: 'arn:aws:s3tables:us-west-2:123456789012:bucket/my-bucket',
+  namespace: 'sales',
+  name: 'daily_sales',
+  snapshotId: 4183020680887155442n,
+});
+```
+
 ## Type Definitions
 
 ### IcebergSchemaField
@@ -176,6 +232,26 @@ Supported partition transforms:
 - `'year'`, `'month'`, `'day'`, `'hour'` - Date/time transforms
 - `'bucket[N]'` - Hash bucket with N buckets
 - `'truncate[N]'` - Truncate strings to N characters
+
+## Testing
+
+Run the test suite:
+
+```bash
+npm test
+```
+
+Run tests with coverage:
+
+```bash
+npm run test:cover
+```
+
+The tests require environment variables to be set:
+
+- `TABLE_ARN` - The ARN of an S3 table for testing
+- `TABLE_BUCKET_ARN` - The ARN of the table bucket
+- `TABLE_NAMESPACE` - The namespace name
 
 ## Configuration
 
