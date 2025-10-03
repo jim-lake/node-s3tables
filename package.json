@@ -38,6 +38,7 @@
     "dotenv-cli": "^10.0.0",
     "eslint": "^9.36.0",
     "eslint-plugin-import": "^2.32.0",
+    "parquetjs": "https://github.com/jim-lake/parquetjs.git#36a2396e7d5f063ccf81896352a3f481271a683c",
     "rollup": "^4.52.3",
     "rollup-plugin-dts": "^6.2.3",
     "tslib": "^2.8.1",
