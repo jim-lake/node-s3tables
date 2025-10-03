@@ -1,71 +1,95 @@
 import { test } from 'node:test';
-import { S3TablesClient, CreateNamespaceCommand, CreateTableCommand, DeleteTableCommand, DeleteNamespaceCommand } from '@aws-sdk/client-s3tables';
+import { inspect } from 'node:util';
+import {
+  S3TablesClient,
+  CreateNamespaceCommand,
+  CreateTableCommand,
+  DeleteTableCommand,
+  DeleteNamespaceCommand,
+} from '@aws-sdk/client-s3tables';
 
-const TABLE_BUCKET_ARN = process.env['TABLE_BUCKET_ARN'] as string;
+import { getMetadata, addSchema } from '../src';
 
-const timestamp = Date.now();
-const TEMP_NAMESPACE = `test${timestamp}`;
-const TEMP_TABLE = `table${timestamp}`;
+const tableBucketARN = process.env['TABLE_BUCKET_ARN'] as string;
 
-console.log(`Using temp namespace: ${TEMP_NAMESPACE}`);
-console.log(`Using temp table: ${TEMP_TABLE}`);
+const client = new S3TablesClient();
 
-const client = new S3TablesClient({ region: 'us-west-2' });
+void test('create s3tables test', async (t) => {
+  let namespace: string;
+  let name: string;
+  let tableArn: string;
 
-let tableArn: string;
-let created = { namespace: false, table: false };
-
-async function cleanup() {
-  try {
-    if (created.table) {
-      await client.send(new DeleteTableCommand({
-        tableBucketARN: TABLE_BUCKET_ARN,
-        namespace: [TEMP_NAMESPACE],
-        name: TEMP_TABLE
-      }));
-      console.log('Table deleted');
+  t.after(async () => {
+    console.log('afterAll: cleanup');
+    try {
+      if (name) {
+        await client.send(
+          new DeleteTableCommand({ tableBucketARN, namespace, name })
+        );
+        console.log('Table deleted:', namespace, name);
+      }
+      if (namespace) {
+        await client.send(
+          new DeleteNamespaceCommand({ tableBucketARN, namespace })
+        );
+        console.log('Namespace deleted:', namespace);
+      }
+    } catch (error) {
+      console.error('Cleanup failed:', error);
     }
-    
-    if (created.namespace) {
-      await client.send(new DeleteNamespaceCommand({
-        tableBucketARN: TABLE_BUCKET_ARN,
-        namespace: [TEMP_NAMESPACE]
-      }));
-      console.log('Namespace deleted');
-    }
-  } catch (error) {
-    console.error('Cleanup failed:', error);
-  }
-}
+  });
 
-void test('s3tables test', async () => {
-  try {
-    // Create namespace
-    await client.send(new CreateNamespaceCommand({
-      tableBucketARN: TABLE_BUCKET_ARN,
-      namespace: [TEMP_NAMESPACE]
-    }));
-    created.namespace = true;
-    console.log('Namespace created');
-
-    // Create table
-    const result = await client.send(new CreateTableCommand({
-      tableBucketARN: TABLE_BUCKET_ARN,
-      namespace: [TEMP_NAMESPACE],
-      name: TEMP_TABLE,
-      format: 'ICEBERG'
-    }));
-    
-    tableArn = result.tableARN!;
-    created.table = true;
-    console.log('Table created:', tableArn);
-
-    console.log('Test completed successfully');
-    await cleanup();
-    
-  } catch (error) {
-    console.error('Test failed:', error);
-    await cleanup();
-    throw error;
-  }
+  await t.test('create namespace', async () => {
+    namespace = `test_namespace_${Date.now()}`;
+    const namespace_result = await client.send(
+      new CreateNamespaceCommand({ tableBucketARN, namespace: [namespace] })
+    );
+    console.log('Namespace created:', namespace, namespace_result);
+  });
+  await t.test('create table', async () => {
+    name = `test_table_${Date.now()}`;
+    const table_result = await client.send(
+      new CreateTableCommand({
+        tableBucketARN,
+        namespace,
+        name,
+        format: 'ICEBERG',
+        metadata: {
+          iceberg: {
+            schema: {
+              fields: [{ name: 'app', type: 'string', required: true }],
+            },
+          },
+        },
+      })
+    );
+    tableArn = table_result.tableARN as string;
+    console.log('Table created:', name, table_result);
+  });
+  await t.test('add schema', async () => {
+    const add_result = await addSchema({
+      tableBucketARN,
+      namespace,
+      name,
+      schemaId: 1,
+      fields: [
+        { id: 1, name: 'app', type: 'string' as const, required: true },
+        {
+          id: 2,
+          name: 'event_datetime',
+          type: 'timestamp' as const,
+          required: true,
+        },
+      ],
+    });
+    console.log('add_result:', add_result);
+  });
+  await t.test('get metadata by tableARN', async () => {
+    const metadata_by_arn = await getMetadata({ tableArn });
+    console.log('metadata_by_arn:', inspect(metadata_by_arn, { depth: 99 }));
+  });
+  await t.test('get metadata by tableBucketARN', async () => {
+    const metadata = await getMetadata({ tableBucketARN, namespace, name });
+    console.log('metadata:', inspect(metadata, { depth: 99 }));
+  });
 });

@@ -127,11 +127,12 @@ function _encodeValue(
         const buf = Buffer.alloc(4);
         buf.writeInt32LE(raw);
         return buf;
-      } if (transform.startsWith('truncate[')) {
+      }
+      if (transform.startsWith('truncate[')) {
         if (typeof raw !== 'string') {
           throw new Error('truncate requires string input');
         }
-        const width = Number((/\d+/).exec(transform)?.[0]);
+        const width = Number(/\d+/.exec(transform)?.[0]);
         return Buffer.from(raw.substring(0, width), 'utf8');
       }
       throw new Error(`Unsupported transform ${transform}`);

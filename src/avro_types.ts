@@ -116,8 +116,7 @@ export class MonthStringType extends avsc.types.LogicalType {
 export class DateStringType extends avsc.types.LogicalType {
   override _fromValue(val: number) {
     const ms = val * 86400000;
-    return new Date(ms).toISOString()
-      .slice(0, 10);
+    return new Date(ms).toISOString().slice(0, 10);
   }
 
   override _toValue(str: string) {
@@ -137,8 +136,7 @@ export class DateStringType extends avsc.types.LogicalType {
 export class HourStringType extends avsc.types.LogicalType {
   override _fromValue(val: number) {
     const ms = val * 3600000;
-    return new Date(ms).toISOString()
-      .slice(0, 13);
+    return new Date(ms).toISOString().slice(0, 13);
   }
 
   override _toValue(str: string) {

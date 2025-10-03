@@ -11,7 +11,13 @@ npm install node-s3tables
 ## Quick Start
 
 ```javascript
-import { getMetadata, addSchema, addPartitionSpec, addDataFiles, setCurrentCommit } from 'node-s3tables';
+import {
+  getMetadata,
+  addSchema,
+  addPartitionSpec,
+  addDataFiles,
+  setCurrentCommit,
+} from 'node-s3tables';
 
 // Get table metadata
 const metadata = await getMetadata({

@@ -294,14 +294,6 @@ export default tseslint.config(
       'func-style': ['error', 'declaration', { allowArrowFunctions: false }],
       'function-call-argument-newline': ['error', 'consistent'],
       'function-paren-newline': ['error', 'consistent'],
-      'id-length': [
-        'error',
-        {
-          min: 2,
-          max: 30,
-          exceptions: ['i', 'j', 'k', 'x', 'y', 'z', '_', 'e', 'n', 's'],
-        },
-      ],
       indent: [
         'error',
         2,
