@@ -3,18 +3,23 @@ import { Sha256 } from '@aws-crypto/sha256-js';
 import { HttpRequest } from '@smithy/protocol-http';
 import { defaultProvider } from '@aws-sdk/credential-provider-node';
 
+import { parse, stringify } from './json';
+
+import type { JSONObject } from './json';
 import type { AwsCredentialIdentity } from '@aws-sdk/types';
 
 export default { icebergRequest };
 
 interface GetParams {
-  credentials?: AwsCredentialIdentity;
+  credentials?: AwsCredentialIdentity | undefined;
   tableBucketARN: string;
   method?: string;
   suffix: string;
   body?: unknown;
 }
-export async function icebergRequest(params: GetParams): Promise<string> {
+export async function icebergRequest<T = JSONObject>(
+  params: GetParams
+): Promise<T> {
   const region = params.tableBucketARN.split(':')[3];
   if (!region) {
     throw new Error('bad tableBucketARN');
@@ -23,7 +28,7 @@ export async function icebergRequest(params: GetParams): Promise<string> {
   const hostname = `s3tables.${region}.amazonaws.com`;
   const full_path = `/iceberg/v1/${arn}${params.suffix}`;
 
-  const body = params.body ? JSON.stringify(params.body) : null;
+  const body = params.body ? stringify(params.body) : null;
   const req_opts: ConstructorParameters<typeof HttpRequest>[0] = {
     method: params.method ?? 'GET',
     protocol: 'https:',
@@ -54,8 +59,13 @@ export async function icebergRequest(params: GetParams): Promise<string> {
     fetch_opts.body = signed.body as string;
   }
   const res = await fetch(url, fetch_opts);
+  const text = await res.text();
   if (!res.ok) {
-    throw new Error(`request failed: ${res.status} ${res.statusText}`);
+    throw new Error(`request failed: ${res.status} ${res.statusText} ${text}`);
   }
-  return (await res.json()) as string;
+  try {
+    return parse(text) as T;
+  } catch (e) {
+    return text as T;
+  }
 }

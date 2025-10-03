@@ -299,7 +299,7 @@ export default tseslint.config(
         {
           min: 2,
           max: 30,
-          exceptions: ['i', 'j', 'k', 'x', 'y', 'z', '_', 'e'],
+          exceptions: ['i', 'j', 'k', 'x', 'y', 'z', '_', 'e', 'n', 's'],
         },
       ],
       indent: [
@@ -364,7 +364,6 @@ export default tseslint.config(
       'no-multi-assign': 'error',
       'no-multiple-empty-lines': ['error', { max: 1, maxEOF: 0, maxBOF: 0 }],
       'no-negated-condition': 'error',
-      'no-nested-ternary': 'error',
       'no-new-object': 'error',
       'no-plusplus': ['error', { allowForLoopAfterthoughts: false }],
       'no-tabs': 'error',
