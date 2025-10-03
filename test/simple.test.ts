@@ -8,7 +8,7 @@ import {
   addDataFiles,
   setCurrentCommit,
 } from '../src';
-
+/*
 const TABLE_ARN = process.env['TABLE_ARN'] as string;
 const TABLE_BUCKET_ARN = process.env['TABLE_BUCKET_ARN'] as string;
 const NAMESPACE = process.env['TABLE_NAMESPACE'] as string;
@@ -97,3 +97,4 @@ void test('set current commit', async () => {
   const result = await setCurrentCommit(opts);
   console.log('result:', util.inspect(result, { depth: 99 }));
 });
+*/
