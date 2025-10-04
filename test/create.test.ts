@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import { inspect } from 'node:util';
+import { PassThrough } from 'node:stream';
 import {
   S3TablesClient,
   CreateNamespaceCommand,
@@ -7,12 +8,16 @@ import {
   DeleteTableCommand,
   DeleteNamespaceCommand,
 } from '@aws-sdk/client-s3tables';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { ParquetWriter, ParquetSchema } from 'parquetjs';
 
-import { getMetadata, addSchema } from '../src';
+import { getMetadata, addSchema, addDataFiles } from '../src';
 
 const tableBucketARN = process.env['TABLE_BUCKET_ARN'] as string;
+const outputBucket = process.env['OUTPUT_BUCKET'] as string;
 
 const client = new S3TablesClient();
+const s3Client = new S3Client({ region: tableBucketARN.split(':')[3] });
 
 void test('create s3tables test', async (t) => {
   let namespace: string;
@@ -91,5 +96,59 @@ void test('create s3tables test', async (t) => {
   await t.test('get metadata by tableBucketARN', async () => {
     const metadata = await getMetadata({ tableBucketARN, namespace, name });
     console.log('metadata:', inspect(metadata, { depth: 99 }));
+  });
+  await t.test('create parquet file and add to table', async () => {
+    // Get table metadata to determine upload location
+    const metadata = await getMetadata({ tableBucketARN, namespace, name });
+    const tableBucket = metadata.location.split('/').slice(-1)[0];
+    const s3Key = `data/app=test-app/data-${Date.now()}.parquet`;
+
+    // Create parquet file in buffer
+    const schema = new ParquetSchema({
+      app: { type: 'UTF8' },
+      event_datetime: { type: 'TIMESTAMP_MILLIS' },
+    });
+
+    const stream = new PassThrough();
+    const chunks: Buffer[] = [];
+    stream.on('data', (chunk) => chunks.push(chunk));
+
+    const writer = await ParquetWriter.openStream(schema, stream);
+    await writer.appendRow({ app: 'test-app', event_datetime: new Date() });
+    await writer.close();
+
+    const fileBuffer = Buffer.concat(chunks);
+
+    // Upload to S3
+    await s3Client.send(
+      new PutObjectCommand({
+        Bucket: tableBucket,
+        Key: s3Key,
+        Body: fileBuffer,
+      })
+    );
+
+    // Add data file to table
+    const result = await addDataFiles({
+      tableBucketARN,
+      namespace,
+      name,
+      file: `s3://${tableBucket}/${s3Key}`,
+      schemaId: 1,
+      specId: 0,
+      partitions: { app: 'test-app' },
+      recordCount: 1n,
+      fileSize: BigInt(fileBuffer.length),
+    });
+
+    console.log('addDataFiles result:', result);
+
+    // Verify metadata after write
+    const updatedMetadata = await getMetadata({
+      tableBucketARN,
+      namespace,
+      name,
+    });
+    console.log('Updated metadata:', inspect(updatedMetadata, { depth: 99 }));
   });
 });

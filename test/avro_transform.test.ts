@@ -12,16 +12,36 @@ const testCombinations = [
   ['identity', 'float', 3.14, Buffer.alloc(4).fill(0)],
   ['identity', 'double', 3.14159, Buffer.alloc(8).fill(0)],
   ['identity', 'string', 'test', Buffer.from('test', 'utf8')],
-  ['identity', 'uuid', '550e8400-e29b-41d4-a716-446655440000', Buffer.from('550e8400-e29b-41d4-a716-446655440000', 'utf8')],
+  [
+    'identity',
+    'uuid',
+    '550e8400-e29b-41d4-a716-446655440000',
+    Buffer.from('550e8400-e29b-41d4-a716-446655440000', 'utf8'),
+  ],
   ['identity', 'boolean', true, Buffer.from([1])],
   ['identity', 'boolean', false, Buffer.from([0])],
   ['identity', 'binary', Buffer.from([1, 2, 3]), Buffer.from([1, 2, 3])],
-  ['identity', 'decimal(10,2)', Buffer.from([1, 2, 3, 4]), Buffer.from([1, 2, 3, 4])],
-  ['identity', 'fixed[4]', Buffer.from([1, 2, 3, 4]), Buffer.from([1, 2, 3, 4])],
+  [
+    'identity',
+    'decimal(10,2)',
+    Buffer.from([1, 2, 3, 4]),
+    Buffer.from([1, 2, 3, 4]),
+  ],
+  [
+    'identity',
+    'fixed[4]',
+    Buffer.from([1, 2, 3, 4]),
+    Buffer.from([1, 2, 3, 4]),
+  ],
 
   // Date/time transforms - using little-endian encoding
   ['year', 'date', '2024-01-01', Buffer.from([232, 7, 0, 0])], // 2024 in little-endian
-  ['year', 'timestamp', '2024-01-01T00:00:00.000Z', Buffer.from([232, 7, 0, 0])], // 2024 in little-endian
+  [
+    'year',
+    'timestamp',
+    '2024-01-01T00:00:00.000Z',
+    Buffer.from([232, 7, 0, 0]),
+  ], // 2024 in little-endian
   ['month', 'date', '2024-01-01', Buffer.from([224, 94, 0, 0])], // (2024*12 + 0) = 24288 in little-endian
   ['day', 'date', '2024-01-01', Buffer.from([11, 77, 0, 0])], // days since epoch = 19723 in little-endian
   ['hour', 'timestamp', '2024-01-01T00:00:00.000Z', Buffer.from([8, 57, 7, 0])], // hours since epoch = 473352 in little-endian
@@ -43,48 +63,53 @@ const testCombinations = [
 ] as const;
 
 void test('makeBounds - comprehensive transform/type combinations', () => {
-  testCombinations.forEach(([transform, sourceType, inputValue, expectedBuffer], index) => {
-    const schema: IcebergSchema = {
-      type: 'struct',
-      'schema-id': 1,
-      fields: [
-        {
-          id: 1,
-          name: 'test_field',
-          type: sourceType as any,
-          required: false,
-        },
-      ],
-    };
+  testCombinations.forEach(
+    ([transform, sourceType, inputValue, expectedBuffer], index) => {
+      const schema: IcebergSchema = {
+        type: 'struct',
+        'schema-id': 1,
+        fields: [
+          {
+            id: 1,
+            name: 'test_field',
+            type: sourceType as any,
+            required: false,
+          },
+        ],
+      };
 
-    const spec: IcebergPartitionSpec = {
-      'spec-id': 1,
-      fields: [
-        {
-          'field-id': 1000,
-          name: 'partition_field',
-          'source-id': 1,
-          transform: transform as any,
-        },
-      ],
-    };
+      const spec: IcebergPartitionSpec = {
+        'spec-id': 1,
+        fields: [
+          {
+            'field-id': 1000,
+            name: 'partition_field',
+            'source-id': 1,
+            transform: transform as any,
+          },
+        ],
+      };
 
-    const partitions: PartitionRecord = {
-      partition_field: inputValue as any,
-    };
+      const partitions: PartitionRecord = {
+        partition_field: inputValue as any,
+      };
 
-    const result = makeBounds(partitions, spec, schema);
-    
-    // Special handling for float/double due to precision
-    if (sourceType === 'float' || sourceType === 'double') {
-      assert.strictEqual(result.length, 1);
-      assert(Buffer.isBuffer(result[0]));
-      assert.strictEqual(result[0]!.length, expectedBuffer.length);
-    } else {
-      assert.deepStrictEqual(result, [expectedBuffer], 
-        `Test ${index}: ${transform} + ${sourceType} with ${inputValue}`);
+      const result = makeBounds(partitions, spec, schema);
+
+      // Special handling for float/double due to precision
+      if (sourceType === 'float' || sourceType === 'double') {
+        assert.strictEqual(result.length, 1);
+        assert(Buffer.isBuffer(result[0]));
+        assert.strictEqual(result[0]!.length, expectedBuffer.length);
+      } else {
+        assert.deepStrictEqual(
+          result,
+          [expectedBuffer],
+          `Test ${index}: ${transform} + ${sourceType} with ${inputValue}`
+        );
+      }
     }
-  });
+  );
 });
 
 void test('makeBounds - edge cases', () => {
@@ -110,9 +135,7 @@ void test('makeBounds - edge cases', () => {
     ],
   };
 
-  const partitionsWithNull: PartitionRecord = {
-    partition_field: null,
-  };
+  const partitionsWithNull: PartitionRecord = { partition_field: null };
 
   const resultWithNull = makeBounds(partitionsWithNull, specWithNull, schema);
   assert.deepStrictEqual(resultWithNull, [null]);
@@ -151,9 +174,7 @@ void test('makeBounds - error cases', () => {
   const schema: IcebergSchema = {
     type: 'struct',
     'schema-id': 1,
-    fields: [
-      { id: 1, name: 'field1', type: 'string', required: false },
-    ],
+    fields: [{ id: 1, name: 'field1', type: 'string', required: false }],
   };
 
   const spec: IcebergPartitionSpec = {
@@ -181,9 +202,7 @@ void test('makeBounds - error cases', () => {
     ],
   };
 
-  const partitions: PartitionRecord = {
-    partition_field: 'test',
-  };
+  const partitions: PartitionRecord = { partition_field: 'test' };
 
   assert.throws(() => {
     makeBounds(partitions, badSpec, schema);
@@ -209,9 +228,7 @@ void test('makeBounds - error cases', () => {
     ],
   };
 
-  const stringPartitions: PartitionRecord = {
-    partition_field: 'not_a_number',
-  };
+  const stringPartitions: PartitionRecord = { partition_field: 'not_a_number' };
 
   assert.throws(() => {
     makeBounds(stringPartitions, bucketSpec, schema);
@@ -230,9 +247,7 @@ void test('makeBounds - error cases', () => {
     ],
   };
 
-  const numberPartitions: PartitionRecord = {
-    partition_field: 123,
-  };
+  const numberPartitions: PartitionRecord = { partition_field: 123 };
 
   assert.throws(() => {
     makeBounds(numberPartitions, truncateSpec, schema);
@@ -242,9 +257,7 @@ void test('makeBounds - error cases', () => {
   const intSchema: IcebergSchema = {
     type: 'struct',
     'schema-id': 1,
-    fields: [
-      { id: 1, name: 'field1', type: 'int', required: false },
-    ],
+    fields: [{ id: 1, name: 'field1', type: 'int', required: false }],
   };
 
   const bufferPartitions: PartitionRecord = {
@@ -265,11 +278,7 @@ void test('makeBounds - complex type handling', () => {
       {
         id: 1,
         name: 'list_field',
-        type: {
-          type: 'list',
-          element: 'string',
-          'element-required': false,
-        },
+        type: { type: 'list', element: 'string', 'element-required': false },
         required: false,
       },
     ],
@@ -299,9 +308,7 @@ void test('makeBounds - date string variations', () => {
   const schema: IcebergSchema = {
     type: 'struct',
     'schema-id': 1,
-    fields: [
-      { id: 1, name: 'date_field', type: 'date', required: false },
-    ],
+    fields: [{ id: 1, name: 'date_field', type: 'date', required: false }],
   };
 
   const daySpec: IcebergPartitionSpec = {
@@ -317,9 +324,7 @@ void test('makeBounds - date string variations', () => {
   };
 
   // Test different date string formats
-  const datePartitions: PartitionRecord = {
-    day_partition: '2024-12-25',
-  };
+  const datePartitions: PartitionRecord = { day_partition: '2024-12-25' };
 
   const result = makeBounds(datePartitions, daySpec, schema);
   assert.strictEqual(result.length, 1);

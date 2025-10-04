@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { avroToBuffer } from './avro_helper';
-import { makeManifestType } from './avro_schema';
+import { makeManifestType, ManifestListType } from './avro_schema';
 import { ManifestFileStatus, DataFileContent, ListContent } from './avro_types';
 import { makeBounds } from './avro_transform';
 import { getMetadata } from './metadata';
@@ -34,9 +34,10 @@ export async function addDataFiles(params: AddDataFilesParams) {
   const metadata = await getMetadata(params);
   const parent_snapshot_id = metadata['current-snapshot-id'];
   const bucket = metadata.location.split('/').slice(-1)[0];
-  const snapshot = metadata.snapshots.find(
-    (s) => s['snapshot-id'] === parent_snapshot_id
-  );
+  const snapshot =
+    parent_snapshot_id !== -1
+      ? metadata.snapshots.find((s) => s['snapshot-id'] === parent_snapshot_id)
+      : null;
   const schema = metadata.schemas.find(
     (s) => s['schema-id'] === params.schemaId
   );
@@ -46,7 +47,7 @@ export async function addDataFiles(params: AddDataFilesParams) {
   if (!bucket) {
     throw new Error('bad manifest location');
   }
-  if (!snapshot) {
+  if (parent_snapshot_id !== -1 && !snapshot) {
     throw new Error('no old snapshot');
   }
   if (!schema) {
@@ -97,11 +98,6 @@ export async function addDataFiles(params: AddDataFilesParams) {
     body: manifest_buf,
   });
 
-  const { key: old_list_key } = parseS3Url(snapshot['manifest-list']);
-  if (!old_list_key) {
-    throw new Error('snapshot invalid');
-  }
-
   const manifest_list_key = `metadata/${randomUUID()}.avro`;
   const manifest_list_url = `s3://${bucket}/${manifest_list_key}`;
 
@@ -113,49 +109,79 @@ export async function addDataFiles(params: AddDataFilesParams) {
     lower_bound: bound,
   }));
 
-  await updateManifestList({
-    credentials,
-    region,
-    bucket,
-    key: old_list_key,
-    outKey: manifest_list_key,
-    metadata: {
-      'sequence-number': String(sequence_number),
-      'snapshot-id': String(snapshot_id),
-      'parent-snapshot-id': String(parent_snapshot_id),
-    },
-    prepend: [
-      {
-        manifest_path: `s3://${bucket}/${manifest_key}`,
-        manifest_length: BigInt(manifest_buf.length),
-        partition_spec_id: params.specId,
-        content: ListContent.DATA,
-        sequence_number,
-        min_sequence_number: sequence_number,
-        added_snapshot_id: snapshot_id,
-        added_data_files_count: 1,
-        existing_data_files_count: 0,
-        deleted_data_files_count: 0,
-        added_rows_count: params.recordCount,
-        existing_rows_count: 0n,
-        deleted_rows_count: 0n,
-        partitions,
+  const manifest_record = {
+    manifest_path: `s3://${bucket}/${manifest_key}`,
+    manifest_length: BigInt(manifest_buf.length),
+    partition_spec_id: params.specId,
+    content: ListContent.DATA,
+    sequence_number,
+    min_sequence_number: sequence_number,
+    added_snapshot_id: snapshot_id,
+    added_data_files_count: 1,
+    existing_data_files_count: 0,
+    deleted_data_files_count: 0,
+    added_rows_count: params.recordCount,
+    existing_rows_count: 0n,
+    deleted_rows_count: 0n,
+    partitions,
+  };
+
+  if (snapshot) {
+    // Update existing manifest list
+    const { key: old_list_key } = parseS3Url(snapshot['manifest-list']);
+    if (!old_list_key) {
+      throw new Error('snapshot invalid');
+    }
+
+    await updateManifestList({
+      credentials,
+      region,
+      bucket,
+      key: old_list_key,
+      outKey: manifest_list_key,
+      metadata: {
+        'sequence-number': String(sequence_number),
+        'snapshot-id': String(snapshot_id),
+        'parent-snapshot-id': String(parent_snapshot_id),
       },
-    ],
-  });
+      prepend: [manifest_record],
+    });
+  } else {
+    // Create new manifest list directly for first snapshot
+    const manifest_list_buf = await avroToBuffer({
+      type: ManifestListType,
+      metadata: {
+        'sequence-number': String(sequence_number),
+        'snapshot-id': String(snapshot_id),
+        'parent-snapshot-id': String(parent_snapshot_id),
+      },
+      records: [manifest_record],
+    });
+
+    await writeS3File({
+      credentials,
+      region,
+      bucket,
+      key: manifest_list_key,
+      body: manifest_list_buf,
+    });
+  }
   const commit_result = await icebergRequest({
     credentials: params.credentials,
     tableBucketARN: params.tableBucketARN,
     method: 'POST',
     suffix: `/namespaces/${params.namespace}/tables/${params.name}`,
     body: {
-      requirements: [
-        {
-          type: 'assert-ref-snapshot-id',
-          ref: 'main',
-          'snapshot-id': parent_snapshot_id,
-        },
-      ],
+      requirements:
+        parent_snapshot_id === -1
+          ? [{ type: 'assert-table-uuid', uuid: metadata['table-uuid'] }]
+          : [
+              {
+                type: 'assert-ref-snapshot-id',
+                ref: 'main',
+                'snapshot-id': parent_snapshot_id,
+              },
+            ],
       updates: [
         {
           action: 'add-snapshot',
