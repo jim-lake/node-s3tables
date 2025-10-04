@@ -70,7 +70,7 @@ void test('create s3tables test', async (t) => {
   });
 
   await t.test('create namespace', async () => {
-    namespace = `test_namespace_${Date.now() % 10000}`;
+    namespace = `test_ns_create_${Math.floor(Math.random() * 10000)}`;
     const namespace_result = await client.send(
       new CreateNamespaceCommand({ tableBucketARN, namespace: [namespace] })
     );

@@ -144,7 +144,7 @@ void test('add multiple parquet files test', async (t) => {
   });
 
   await t.test('create namespace', async () => {
-    namespace = `test_namespace_${Date.now() % 10000}`;
+    namespace = `test_ns_add_${Math.floor(Math.random() * 10000)}`;
     const namespace_result = await client.send(
       new CreateNamespaceCommand({ tableBucketARN, namespace: [namespace] })
     );
@@ -171,7 +171,15 @@ void test('add multiple parquet files test', async (t) => {
         metadata: {
           iceberg: {
             schema: {
-              fields: [{ name: 'app', type: 'string', required: true }],
+              fields: [
+                { name: 'app', type: 'string', required: true },
+                {
+                  id: 2,
+                  name: 'event_datetime',
+                  type: 'timestamp' as const,
+                  required: true,
+                },
+              ],
             },
           },
         },
@@ -179,25 +187,6 @@ void test('add multiple parquet files test', async (t) => {
     );
     tableArn = table_result.tableARN as string;
     console.log('Table created:', name, table_result);
-  });
-
-  await t.test('add schema', async () => {
-    const add_result = await addSchema({
-      tableBucketARN,
-      namespace,
-      name,
-      schemaId: 1,
-      fields: [
-        { id: 1, name: 'app', type: 'string' as const, required: true },
-        {
-          id: 2,
-          name: 'event_datetime',
-          type: 'timestamp' as const,
-          required: true,
-        },
-      ],
-    });
-    console.log('add_result:', add_result);
   });
 
   await t.test('add first parquet file (10 rows)', async () => {
@@ -211,7 +200,7 @@ void test('add multiple parquet files test', async (t) => {
       namespace,
       name,
       file: `s3://${tableBucket}/${key}`,
-      schemaId: 1,
+      schemaId: 0,
       specId: 0,
       partitions: { app: 'test-app' },
       recordCount: 10n,
@@ -235,7 +224,7 @@ void test('add multiple parquet files test', async (t) => {
       namespace,
       name,
       file: `s3://${tableBucket}/${key}`,
-      schemaId: 1,
+      schemaId: 0,
       specId: 0,
       partitions: { app: 'test-app' },
       recordCount: 10n,
@@ -259,7 +248,7 @@ void test('add multiple parquet files test', async (t) => {
       namespace,
       name,
       file: `s3://${tableBucket}/${key}`,
-      schemaId: 1,
+      schemaId: 0,
       specId: 0,
       partitions: { app: 'test-app' },
       recordCount: 10n,
