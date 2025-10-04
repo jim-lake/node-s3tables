@@ -9,15 +9,25 @@ import {
   DeleteNamespaceCommand,
 } from '@aws-sdk/client-s3tables';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { LakeFormationClient, AddLFTagsToResourceCommand } from "@aws-sdk/client-lakeformation"; // ES Modules import
 import { ParquetWriter, ParquetSchema } from 'parquetjs';
 
 import { getMetadata, addSchema, addDataFiles } from '../src';
 
 const tableBucketARN = process.env['TABLE_BUCKET_ARN'] as string;
+const catalogId = process.env['CATALOG_ID'] as string;
+
+if (!tableBucketARN) {
+  throw new Error('environment requires TABLE_BUCKET_ARN');
+}
+if (!catalogId) {
+  throw new Error('environment requires CATALOG_ID');
+}
 
 const client = new S3TablesClient();
 const region = tableBucketARN.split(':')[3];
 const s3Client = new S3Client(region ? { region } : {});
+const LFClient = new LakeFormationClient(region ? { region } : {});
 
 void test('create s3tables test', async (t) => {
   let namespace: string;
@@ -50,6 +60,26 @@ void test('create s3tables test', async (t) => {
       new CreateNamespaceCommand({ tableBucketARN, namespace: [namespace] })
     );
     console.log('Namespace created:', namespace, namespace_result);
+  });
+  await t.test('add lake formation tag', async () => {
+    const command = new AddLFTagsToResourceCommand({
+      Resource: {
+        Database: {
+          CatalogId: catalogId,
+          Name: namespace,
+        },
+      },
+      LFTags: [
+        {
+          TagKey: "AccessLevel",
+          TagValues: [
+            "Public",
+          ],
+        },
+      ],
+    });
+    const response = await LFClient.send(command);
+    console.log("add tag response:", response);
   });
   await t.test('create table', async () => {
     name = `test_table1`;
