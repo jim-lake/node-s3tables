@@ -31,6 +31,7 @@
     "lossless-json": "^4.2.0"
   },
   "devDependencies": {
+    "@aws-sdk/client-athena": "^3.901.0",
     "@rollup/plugin-commonjs": "^28.0.6",
     "@rollup/plugin-node-resolve": "^16.0.1",
     "@rollup/plugin-typescript": "^12.1.4",

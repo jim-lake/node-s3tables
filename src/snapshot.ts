@@ -174,7 +174,12 @@ export async function addDataFiles(params: AddDataFilesParams) {
     body: {
       requirements:
         parent_snapshot_id === -1
-          ? [{ type: 'assert-table-uuid', uuid: metadata['table-uuid'] }]
+          ? [
+              {
+                type: 'assert-table-uuid',
+                uuid: (metadata as any)['table-uuid'],
+              },
+            ]
           : [
               {
                 type: 'assert-ref-snapshot-id',

@@ -9,15 +9,16 @@ import {
   DeleteNamespaceCommand,
 } from '@aws-sdk/client-s3tables';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+// @ts-ignore - parquetjs doesn't have types
 import { ParquetWriter, ParquetSchema } from 'parquetjs';
 
 import { getMetadata, addSchema, addDataFiles } from '../src';
 
 const tableBucketARN = process.env['TABLE_BUCKET_ARN'] as string;
-const outputBucket = process.env['OUTPUT_BUCKET'] as string;
 
 const client = new S3TablesClient();
-const s3Client = new S3Client({ region: tableBucketARN.split(':')[3] });
+const region = tableBucketARN.split(':')[3];
+const s3Client = new S3Client(region ? { region } : {});
 
 void test('create s3tables test', async (t) => {
   let namespace: string;

@@ -1,5 +1,5 @@
 import { test } from 'node:test';
-import assert from 'node:assert';
+import { strict as assert } from 'node:assert';
 import { makeBounds } from '../src/avro_transform';
 import type { IcebergPartitionSpec, IcebergSchema } from '../src/iceberg';
 import type { PartitionRecord } from '../src/avro_types';
@@ -297,7 +297,7 @@ void test('makeBounds - complex type handling', () => {
   };
 
   const complexPartitions: PartitionRecord = {
-    partition_field: ['item1', 'item2'],
+    partition_field: Buffer.from([1, 2]),
   };
 
   const result = makeBounds(complexPartitions, complexSpec, complexSchema);
