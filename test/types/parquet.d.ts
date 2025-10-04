@@ -1,3 +1,5 @@
+/* eslint-disable */
+
 declare module 'parquetjs' {
   export class ParquetSchema {
     constructor(schema: Record<string, { type: string }>);
