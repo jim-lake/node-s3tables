@@ -77,9 +77,8 @@ async function queryRowCount(namespace: string, name: string): Promise<number> {
       queryResults.ResultSet?.Rows?.[1]?.Data?.[0]?.VarCharValue || '0'
     );
     return rowCount;
-  } else {
-    throw new Error(`Athena query failed with status: ${status}`);
   }
+  throw new Error(`Athena query failed with status: ${status}`);
 }
 
 async function createParquetFile(
@@ -121,7 +120,6 @@ async function createParquetFile(
 void test('add multiple parquet files test', async (t) => {
   let namespace: string;
   let name: string;
-  let tableArn: string;
 
   t.after(async () => {
     console.log('afterAll: cleanup');
@@ -161,7 +159,7 @@ void test('add multiple parquet files test', async (t) => {
   });
 
   await t.test('create table', async () => {
-    name = `test_table_add`;
+    name = 'test_table_add';
     const table_result = await client.send(
       new CreateTableCommand({
         tableBucketARN,
@@ -185,13 +183,15 @@ void test('add multiple parquet files test', async (t) => {
         },
       })
     );
-    tableArn = table_result.tableARN as string;
     console.log('Table created:', name, table_result);
   });
 
   await t.test('add first parquet file (10 rows)', async () => {
     const metadata = await getMetadata({ tableBucketARN, namespace, name });
     const tableBucket = metadata.location.split('/').slice(-1)[0];
+    if (!tableBucket) {
+      throw new Error('Could not extract table bucket');
+    }
 
     const { key, size } = await createParquetFile(tableBucket, 1);
 
@@ -210,12 +210,17 @@ void test('add multiple parquet files test', async (t) => {
 
     const rowCount = await queryRowCount(namespace, name);
     console.log('Row count after first file:', rowCount);
-    if (rowCount !== 10) throw new Error(`Expected 10 rows, got ${rowCount}`);
+    if (rowCount !== 10) {
+      throw new Error(`Expected 10 rows, got ${rowCount}`);
+    }
   });
 
   await t.test('add second parquet file (10 rows)', async () => {
     const metadata = await getMetadata({ tableBucketARN, namespace, name });
     const tableBucket = metadata.location.split('/').slice(-1)[0];
+    if (!tableBucket) {
+      throw new Error('Could not extract table bucket');
+    }
 
     const { key, size } = await createParquetFile(tableBucket, 2);
 
@@ -234,12 +239,17 @@ void test('add multiple parquet files test', async (t) => {
 
     const rowCount = await queryRowCount(namespace, name);
     console.log('Row count after second file:', rowCount);
-    if (rowCount !== 20) throw new Error(`Expected 20 rows, got ${rowCount}`);
+    if (rowCount !== 20) {
+      throw new Error(`Expected 20 rows, got ${rowCount}`);
+    }
   });
 
   await t.test('add third parquet file (10 rows)', async () => {
     const metadata = await getMetadata({ tableBucketARN, namespace, name });
     const tableBucket = metadata.location.split('/').slice(-1)[0];
+    if (!tableBucket) {
+      throw new Error('Could not extract table bucket');
+    }
 
     const { key, size } = await createParquetFile(tableBucket, 3);
 
@@ -258,7 +268,9 @@ void test('add multiple parquet files test', async (t) => {
 
     const rowCount = await queryRowCount(namespace, name);
     console.log('Row count after third file:', rowCount);
-    if (rowCount !== 30) throw new Error(`Expected 30 rows, got ${rowCount}`);
+    if (rowCount !== 30) {
+      throw new Error(`Expected 30 rows, got ${rowCount}`);
+    }
   });
 
   await t.test('final metadata check', async () => {

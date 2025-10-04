@@ -100,7 +100,7 @@ void test('makeBounds - comprehensive transform/type combinations', () => {
       if (sourceType === 'float' || sourceType === 'double') {
         assert.strictEqual(result.length, 1);
         assert(Buffer.isBuffer(result[0]));
-        assert.strictEqual(result[0]!.length, expectedBuffer.length);
+        assert.strictEqual(result[0].length, expectedBuffer.length);
       } else {
         assert.deepStrictEqual(
           result,
@@ -329,5 +329,5 @@ void test('makeBounds - date string variations', () => {
   const result = makeBounds(datePartitions, daySpec, schema);
   assert.strictEqual(result.length, 1);
   assert(Buffer.isBuffer(result[0]));
-  assert.strictEqual(result[0]!.length, 4);
+  assert.strictEqual(result[0].length, 4);
 });

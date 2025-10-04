@@ -8,7 +8,9 @@ declare module 'parquetjs' {
       schema: ParquetSchema,
       stream: NodeJS.WritableStream
     ): Promise<ParquetWriter>;
+
     appendRow(row: Record<string, any>): Promise<void>;
+
     close(): Promise<void>;
   }
 }

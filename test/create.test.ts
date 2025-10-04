@@ -85,7 +85,7 @@ void test('create s3tables test', async (t) => {
     console.log('add tag response:', response);
   });
   await t.test('create table', async () => {
-    name = `test_table1`;
+    name = 'test_table1';
     const table_result = await client.send(
       new CreateTableCommand({
         tableBucketARN,
