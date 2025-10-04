@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import { inspect } from 'node:util';
 import { PassThrough } from 'node:stream';
+import { setTimeout } from 'node:timers/promises';
 import {
   S3TablesClient,
   CreateNamespaceCommand,
@@ -9,13 +10,23 @@ import {
   DeleteNamespaceCommand,
 } from '@aws-sdk/client-s3tables';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { LakeFormationClient, AddLFTagsToResourceCommand } from "@aws-sdk/client-lakeformation"; // ES Modules import
+import {
+  LakeFormationClient,
+  AddLFTagsToResourceCommand,
+} from '@aws-sdk/client-lakeformation'; // ES Modules import
+import {
+  AthenaClient,
+  StartQueryExecutionCommand,
+  GetQueryExecutionCommand,
+  GetQueryResultsCommand,
+} from '@aws-sdk/client-athena';
 import { ParquetWriter, ParquetSchema } from 'parquetjs';
 
 import { getMetadata, addSchema, addDataFiles } from '../src';
 
 const tableBucketARN = process.env['TABLE_BUCKET_ARN'] as string;
 const catalogId = process.env['CATALOG_ID'] as string;
+const outputBucket = process.env['OUTPUT_BUCKET'] as string;
 
 if (!tableBucketARN) {
   throw new Error('environment requires TABLE_BUCKET_ARN');
@@ -23,11 +34,15 @@ if (!tableBucketARN) {
 if (!catalogId) {
   throw new Error('environment requires CATALOG_ID');
 }
+if (!outputBucket) {
+  throw new Error('environment requires OUTPUT_BUCKET');
+}
 
 const client = new S3TablesClient();
 const region = tableBucketARN.split(':')[3];
 const s3Client = new S3Client(region ? { region } : {});
 const LFClient = new LakeFormationClient(region ? { region } : {});
+const athenaClient = new AthenaClient(region ? { region } : {});
 
 void test('create s3tables test', async (t) => {
   let namespace: string;
@@ -63,23 +78,11 @@ void test('create s3tables test', async (t) => {
   });
   await t.test('add lake formation tag', async () => {
     const command = new AddLFTagsToResourceCommand({
-      Resource: {
-        Database: {
-          CatalogId: catalogId,
-          Name: namespace,
-        },
-      },
-      LFTags: [
-        {
-          TagKey: "AccessLevel",
-          TagValues: [
-            "Public",
-          ],
-        },
-      ],
+      Resource: { Database: { CatalogId: catalogId, Name: namespace } },
+      LFTags: [{ TagKey: 'AccessLevel', TagValues: ['Public'] }],
     });
     const response = await LFClient.send(command);
-    console.log("add tag response:", response);
+    console.log('add tag response:', response);
   });
   await t.test('create table', async () => {
     name = `test_table1`;
@@ -166,5 +169,40 @@ void test('create s3tables test', async (t) => {
   await t.test('get metadata after add', async () => {
     const metadata = await getMetadata({ tableBucketARN, namespace, name });
     console.log('metadata:', inspect(metadata, { depth: 99 }));
+  });
+  await t.test('query table with athena', async () => {
+    const bucket = tableBucketARN.split('/').slice(-1)[0];
+    const sql = `SELECT * FROM ${name}`;
+
+    const { QueryExecutionId } = await athenaClient.send(
+      new StartQueryExecutionCommand({
+        QueryExecutionContext: {
+          Catalog: `s3tablescatalog/${bucket}`,
+          Database: namespace,
+        },
+        QueryString: sql,
+        ResultConfiguration: { OutputLocation: `s3://${outputBucket}/output` },
+      })
+    );
+
+    let result;
+    let status = 'RUNNING';
+    while (status === 'RUNNING' || status === 'QUEUED') {
+      await setTimeout(200);
+      result = await athenaClient.send(
+        new GetQueryExecutionCommand({ QueryExecutionId })
+      );
+      status = result.QueryExecution?.Status?.State!;
+    }
+
+    if (status === 'SUCCEEDED') {
+      console.log('Athena query succeeded');
+      const queryResults = await athenaClient.send(
+        new GetQueryResultsCommand({ QueryExecutionId })
+      );
+      console.log('Query results:', inspect(queryResults, { depth: 99 }));
+    } else {
+      throw new Error(`Athena query failed with status: ${status}`);
+    }
   });
 });
