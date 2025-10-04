@@ -45,7 +45,7 @@ void test('create s3tables test', async (t) => {
   });
 
   await t.test('create namespace', async () => {
-    namespace = `test_namespace_${Date.now()%10000}`;
+    namespace = `test_namespace_${Date.now() % 10000}`;
     const namespace_result = await client.send(
       new CreateNamespaceCommand({ tableBucketARN, namespace: [namespace] })
     );
@@ -94,7 +94,6 @@ void test('create s3tables test', async (t) => {
     console.log('metadata_by_arn:', inspect(metadata_by_arn, { depth: 99 }));
   });
   await t.test('create parquet file and add to table', async () => {
-    return;
     const metadata = await getMetadata({ tableBucketARN, namespace, name });
     const tableBucket = metadata.location.split('/').slice(-1)[0];
     const s3Key = `data/app=test-app/data-${Date.now()}.parquet`;
