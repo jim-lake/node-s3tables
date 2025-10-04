@@ -5,6 +5,7 @@ import {
   GetQueryResultsCommand,
 } from '@aws-sdk/client-athena';
 import { setTimeout } from 'node:timers/promises';
+import { inspect } from 'node:util';
 
 const TABLE_BUCKET_ARN = process.env['TABLE_BUCKET_ARN'] as string;
 const OUTPUT_BUCKET = process.env['OUTPUT_BUCKET'] as string;
@@ -52,10 +53,11 @@ async function runQuery() {
   }
 
   if (status === 'SUCCEEDED') {
-    const { ResultSet } = await client.send(
+    console.log('SUCCEEDED:', inspect(result, { depth: 99 }));
+    const final_result = await client.send(
       new GetQueryResultsCommand({ QueryExecutionId })
     );
-    console.log(JSON.stringify(ResultSet, null, 2));
+    console.log(inspect(final_result, { depth: 99 }));
   } else {
     console.error('Query failed:', status, result);
   }
