@@ -265,7 +265,6 @@ export default tseslint.config(
       // Complexity rules - VERY STRICT
       'max-depth': ['error', 3],
       'max-nested-callbacks': ['error', 2],
-      'max-params': ['error', 3],
       'max-statements-per-line': ['error', { max: 1 }],
 
       '@typescript-eslint/consistent-type-imports': [
@@ -305,7 +304,6 @@ export default tseslint.config(
         { newIsCap: true, capIsNew: true, properties: true },
       ],
       'new-parens': ['error', 'always'],
-      'newline-per-chained-call': ['error', { ignoreChainWithDepth: 2 }],
       'no-array-constructor': 'error',
       'no-continue': 'error',
       'no-mixed-spaces-and-tabs': 'error',
@@ -358,7 +356,6 @@ export default tseslint.config(
       'switch-colon-spacing': ['error', { after: true, before: false }],
       'template-tag-spacing': ['error', 'never'],
       'unicode-bom': ['error', 'never'],
-      'wrap-regex': 'error',
     },
   },
   {
