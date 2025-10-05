@@ -67,9 +67,9 @@ const testCombinations = [
   ['year', 'long', 2024n, Buffer.from([232, 7, 0, 0])], // 2024 as bigint
 ] as const;
 
-void test('makeBounds - comprehensive transform/type combinations', () => {
-  testCombinations.forEach(
-    ([transform, sourceType, inputValue, expectedBuffer], index) => {
+void test('makeBounds - comprehensive transform/type combinations', async (t) => {
+  for (const [transform, sourceType, inputValue, expectedBuffer] of testCombinations) {
+    await t.test(`${transform} + ${sourceType} with ${String(inputValue)}`, () => {
       const schema: IcebergSchema = {
         type: 'struct',
         'schema-id': 1,
@@ -103,18 +103,14 @@ void test('makeBounds - comprehensive transform/type combinations', () => {
 
       // Special handling for float/double due to precision
       if (sourceType === 'float' || sourceType === 'double') {
-        assert.strictEqual(result.length, 1);
-        assert(Buffer.isBuffer(result[0]));
-        assert.strictEqual(result[0].length, expectedBuffer.length);
+        assert.strictEqual(result.length, 1, `Expected result array length to be 1 for ${sourceType}`);
+        assert(Buffer.isBuffer(result[0]), `Expected result[0] to be a Buffer for ${sourceType}`);
+        assert.strictEqual(result[0].length, expectedBuffer.length, `Expected buffer length ${expectedBuffer.length} for ${sourceType}`);
       } else {
-        assert.deepStrictEqual(
-          result,
-          [expectedBuffer],
-          `Test ${index}: ${transform} + ${sourceType} with ${String(inputValue)}`
-        );
+        assert.deepStrictEqual(result, [expectedBuffer], `Expected result to match expected buffer for ${transform} + ${sourceType}`);
       }
-    }
-  );
+    });
+  }
 });
 
 void test('makeBounds - edge cases', () => {
@@ -143,7 +139,7 @@ void test('makeBounds - edge cases', () => {
   const partitionsWithNull: PartitionRecord = { partition_field: null };
 
   const resultWithNull = makeBounds(partitionsWithNull, specWithNull, schema);
-  assert.deepStrictEqual(resultWithNull, [null]);
+  assert.deepStrictEqual(resultWithNull, [null], 'Expected null partition to return [null]');
 
   // Test multiple partition fields
   const multiSpec: IcebergPartitionSpec = {
@@ -170,9 +166,9 @@ void test('makeBounds - edge cases', () => {
   };
 
   const multiResult = makeBounds(multiPartitions, multiSpec, schema);
-  assert.strictEqual(multiResult.length, 2);
-  assert.deepStrictEqual(multiResult[0], Buffer.from('test', 'utf8'));
-  assert.deepStrictEqual(multiResult[1], Buffer.from([42, 0, 0, 0]));
+  assert.strictEqual(multiResult.length, 2, 'Expected 2 results for multiple partition fields');
+  assert.deepStrictEqual(multiResult[0], Buffer.from('test', 'utf8'), 'Expected first result to be string buffer');
+  assert.deepStrictEqual(multiResult[1], Buffer.from([42, 0, 0, 0]), 'Expected second result to be int buffer');
 });
 
 void test('makeBounds - error cases', () => {
@@ -211,14 +207,14 @@ void test('makeBounds - error cases', () => {
 
   assert.throws(() => {
     makeBounds(partitions, badSpec, schema);
-  }, /Schema field not found for source-id 999/);
+  }, /Schema field not found for source-id 999/, 'Expected error for non-existent schema field');
 
   // Missing partition value
   const emptyPartitions: PartitionRecord = {};
 
   assert.throws(() => {
     makeBounds(emptyPartitions, spec, schema);
-  }, /paritions missing partition_field/);
+  }, /paritions missing partition_field/, 'Expected error for missing partition value');
 
   // Invalid transform for type
   const bucketSpec: IcebergPartitionSpec = {
@@ -237,7 +233,7 @@ void test('makeBounds - error cases', () => {
 
   assert.throws(() => {
     makeBounds(stringPartitions, bucketSpec, schema);
-  }, /bucket requires number input/);
+  }, /bucket requires number input/, 'Expected error for bucket transform with string input');
 
   // Invalid truncate input
   const truncateSpec: IcebergPartitionSpec = {
@@ -256,7 +252,7 @@ void test('makeBounds - error cases', () => {
 
   assert.throws(() => {
     makeBounds(numberPartitions, truncateSpec, schema);
-  }, /truncate requires string input/);
+  }, /truncate requires string input/, 'Expected error for truncate transform with number input');
 
   // Buffer with wrong identity type
   const intSchema: IcebergSchema = {
@@ -271,7 +267,7 @@ void test('makeBounds - error cases', () => {
 
   assert.throws(() => {
     makeBounds(bufferPartitions, spec, intSchema);
-  }, /Buffer not allowed for identity with type int/);
+  }, /Buffer not allowed for identity with type int/, 'Expected error for buffer with wrong identity type');
 });
 
 void test('makeBounds - complex type handling', () => {
@@ -306,7 +302,7 @@ void test('makeBounds - complex type handling', () => {
   };
 
   const result = makeBounds(complexPartitions, complexSpec, complexSchema);
-  assert.deepStrictEqual(result, [null]);
+  assert.deepStrictEqual(result, [null], 'Expected complex type to return [null]');
 });
 
 void test('makeBounds - date string variations', () => {
@@ -332,7 +328,7 @@ void test('makeBounds - date string variations', () => {
   const datePartitions: PartitionRecord = { day_partition: '2024-12-25' };
 
   const result = makeBounds(datePartitions, daySpec, schema);
-  assert.strictEqual(result.length, 1);
-  assert(Buffer.isBuffer(result[0]));
-  assert.strictEqual(result[0].length, 4);
+  assert.strictEqual(result.length, 1, 'Expected single result for date string');
+  assert(Buffer.isBuffer(result[0]), 'Expected result to be a Buffer for date string');
+  assert.strictEqual(result[0].length, 4, 'Expected 4-byte buffer for date transform');
 });
