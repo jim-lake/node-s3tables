@@ -187,7 +187,7 @@ export default tseslint.config(
       'prefer-const': 'error',
       eqeqeq: ['error', 'always', { null: 'always' }],
       curly: ['error', 'all'],
-      'no-else-return': ['error', { allowElseIf: false }],
+      'no-else-return': ['error', { allowElseIf: true }],
       'no-lonely-if': 'error',
       'no-unneeded-ternary': ['error', { defaultAssignment: false }],
       'prefer-template': 'error',

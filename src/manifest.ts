@@ -132,11 +132,9 @@ export async function addManifest(
 function _minBuffer(a: Buffer | null, b: Buffer | null): Buffer | null {
   if (!a && !b) {
     return null;
-  }
-  if (!a) {
+  } else if (!a) {
     return b;
-  }
-  if (!b) {
+  } else if (!b) {
     return a;
   }
   return Buffer.compare(a, b) <= 0 ? a : b;
@@ -144,11 +142,9 @@ function _minBuffer(a: Buffer | null, b: Buffer | null): Buffer | null {
 function _maxBuffer(a: Buffer | null, b: Buffer | null): Buffer | null {
   if (!a && !b) {
     return null;
-  }
-  if (!a) {
+  } else if (!a) {
     return b;
-  }
-  if (!b) {
+  } else if (!b) {
     return a;
   }
   return Buffer.compare(a, b) >= 0 ? a : b;
