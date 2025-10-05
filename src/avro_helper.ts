@@ -16,10 +16,10 @@ export function fixupMetadata(
 ): Record<string, Buffer> {
   const newMetadata: Record<string, Buffer> = {};
   for (const [key, value] of Object.entries(metadata)) {
-    if (!Buffer.isBuffer(value)) {
-      newMetadata[key] = Buffer.from(value, 'utf8');
-    } else {
+    if (Buffer.isBuffer(value)) {
       newMetadata[key] = value;
+    } else {
+      newMetadata[key] = Buffer.from(value, 'utf8');
     }
   }
   return newMetadata;

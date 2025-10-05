@@ -1,7 +1,12 @@
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { makeBounds } from '../src/avro_transform';
-import type { IcebergPartitionSpec, IcebergSchema } from '../src/iceberg';
+import type {
+  IcebergPartitionSpec,
+  IcebergSchema,
+  IcebergType,
+  IcebergTransform,
+} from '../src/iceberg';
 import type { PartitionRecord } from '../src/avro_types';
 
 // Test data combinations: [transform, sourceType, inputValue, expectedBuffer]
@@ -72,7 +77,7 @@ void test('makeBounds - comprehensive transform/type combinations', () => {
           {
             id: 1,
             name: 'test_field',
-            type: sourceType as any,
+            type: sourceType as IcebergType,
             required: false,
           },
         ],
@@ -85,13 +90,13 @@ void test('makeBounds - comprehensive transform/type combinations', () => {
             'field-id': 1000,
             name: 'partition_field',
             'source-id': 1,
-            transform: transform as any,
+            transform: transform as IcebergTransform,
           },
         ],
       };
 
       const partitions: PartitionRecord = {
-        partition_field: inputValue as any,
+        partition_field: inputValue as string | number | bigint | Buffer | null,
       };
 
       const result = makeBounds(partitions, spec, schema);
@@ -105,7 +110,7 @@ void test('makeBounds - comprehensive transform/type combinations', () => {
         assert.deepStrictEqual(
           result,
           [expectedBuffer],
-          `Test ${index}: ${transform} + ${sourceType} with ${inputValue}`
+          `Test ${index}: ${transform} + ${sourceType} with ${String(inputValue)}`
         );
       }
     }

@@ -24,9 +24,9 @@ import { ParquetWriter, ParquetSchema } from 'parquetjs';
 
 import { getMetadata, addPartitionSpec, addDataFiles } from '../src';
 
-const tableBucketARN = process.env['TABLE_BUCKET_ARN'] as string;
-const catalogId = process.env['CATALOG_ID'] as string;
-const outputBucket = process.env['OUTPUT_BUCKET'] as string;
+const tableBucketARN = process.env['TABLE_BUCKET_ARN'];
+const catalogId = process.env['CATALOG_ID'];
+const outputBucket = process.env['OUTPUT_BUCKET'];
 
 if (!tableBucketARN) {
   throw new Error('environment requires TABLE_BUCKET_ARN');
@@ -49,7 +49,14 @@ async function queryRowCount(
   name: string,
   whereClause?: string
 ): Promise<number> {
-  const bucket = tableBucketARN.split('/').slice(-1)[0];
+  if (!tableBucketARN) {
+    throw new Error('tableBucketARN is not defined');
+  }
+  const bucketParts = tableBucketARN.split('/');
+  const bucket = bucketParts[bucketParts.length - 1];
+  if (!bucket) {
+    throw new Error('Could not extract bucket from tableBucketARN');
+  }
   const sql = `SELECT COUNT(*) as row_count FROM ${name}${whereClause ? ` WHERE ${whereClause}` : ''}`;
 
   const { QueryExecutionId } = await athenaClient.send(
@@ -59,7 +66,9 @@ async function queryRowCount(
         Database: namespace,
       },
       QueryString: sql,
-      ResultConfiguration: { OutputLocation: `s3://${outputBucket}/output` },
+      ResultConfiguration: {
+        OutputLocation: `s3://${outputBucket ?? ''}/output`,
+      },
     })
   );
 
@@ -70,7 +79,7 @@ async function queryRowCount(
     result = await athenaClient.send(
       new GetQueryExecutionCommand({ QueryExecutionId })
     );
-    status = result.QueryExecution?.Status?.State!;
+    status = result.QueryExecution?.Status?.State ?? 'FAILED';
   }
 
   if (status === 'SUCCEEDED') {
@@ -92,7 +101,11 @@ async function createParquetFile(
   date: Date,
   fileIndex: number
 ): Promise<{ key: string; size: number }> {
-  const dateStr = date.toISOString().split('T')[0];
+  const dateParts = date.toISOString().split('T');
+  const dateStr = dateParts[0];
+  if (!dateStr) {
+    throw new Error('Could not extract date string from ISO string');
+  }
   const s3Key = `data/app_name=${appName}/event_datetime_day=${dateStr}/data-${Date.now()}-${fileIndex}.parquet`;
 
   const schema = new ParquetSchema({
@@ -103,7 +116,7 @@ async function createParquetFile(
 
   const stream = new PassThrough();
   const chunks: Buffer[] = [];
-  stream.on('data', (chunk) => chunks.push(chunk));
+  stream.on('data', (chunk: Buffer) => chunks.push(chunk));
 
   const writer = await ParquetWriter.openStream(schema, stream);
 

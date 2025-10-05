@@ -24,9 +24,9 @@ import { ParquetWriter, ParquetSchema } from 'parquetjs';
 
 import { getMetadata, addSchema, addDataFiles } from '../src';
 
-const tableBucketARN = process.env['TABLE_BUCKET_ARN'] as string;
-const catalogId = process.env['CATALOG_ID'] as string;
-const outputBucket = process.env['OUTPUT_BUCKET'] as string;
+const tableBucketARN = process.env['TABLE_BUCKET_ARN'];
+const catalogId = process.env['CATALOG_ID'];
+const outputBucket = process.env['OUTPUT_BUCKET'];
 
 if (!tableBucketARN) {
   throw new Error('environment requires TABLE_BUCKET_ARN');
@@ -128,7 +128,11 @@ void test('create s3tables test', async (t) => {
   });
   await t.test('create parquet file and add to table', async () => {
     const metadata = await getMetadata({ tableBucketARN, namespace, name });
-    const tableBucket = metadata.location.split('/').slice(-1)[0];
+    const bucketParts = metadata.location.split('/');
+    const tableBucket = bucketParts[bucketParts.length - 1];
+    if (!tableBucket) {
+      throw new Error('Could not extract table bucket from metadata location');
+    }
     const s3Key = `data/app=test-app/data-${Date.now()}.parquet`;
 
     const schema = new ParquetSchema({
@@ -138,7 +142,7 @@ void test('create s3tables test', async (t) => {
 
     const stream = new PassThrough();
     const chunks: Buffer[] = [];
-    stream.on('data', (chunk) => chunks.push(chunk));
+    stream.on('data', (chunk: Buffer) => chunks.push(chunk));
 
     const writer = await ParquetWriter.openStream(schema, stream);
     await writer.appendRow({ app: 'test-app', event_datetime: new Date() });
@@ -171,7 +175,11 @@ void test('create s3tables test', async (t) => {
     console.log('metadata:', inspect(metadata, { depth: 99 }));
   });
   await t.test('query table with athena', async () => {
-    const bucket = tableBucketARN.split('/').slice(-1)[0];
+    const bucketParts = tableBucketARN.split('/');
+    const bucket = bucketParts[bucketParts.length - 1];
+    if (!bucket) {
+      throw new Error('Could not extract bucket from tableBucketARN');
+    }
     const sql = `SELECT * FROM ${name}`;
 
     const { QueryExecutionId } = await athenaClient.send(
@@ -192,7 +200,7 @@ void test('create s3tables test', async (t) => {
       result = await athenaClient.send(
         new GetQueryExecutionCommand({ QueryExecutionId })
       );
-      status = result.QueryExecution?.Status?.State!;
+      status = result.QueryExecution?.Status?.State ?? 'FAILED';
     }
 
     if (status === 'SUCCEEDED') {

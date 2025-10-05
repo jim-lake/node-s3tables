@@ -35,9 +35,9 @@ export async function addDataFiles(params: AddDataFilesParams) {
   const parent_snapshot_id = metadata['current-snapshot-id'];
   const bucket = metadata.location.split('/').slice(-1)[0];
   const snapshot =
-    parent_snapshot_id !== -1
-      ? metadata.snapshots.find((s) => s['snapshot-id'] === parent_snapshot_id)
-      : null;
+    parent_snapshot_id === -1
+      ? null
+      : metadata.snapshots.find((s) => s['snapshot-id'] === parent_snapshot_id);
   const schema = metadata.schemas.find(
     (s) => s['schema-id'] === params.schemaId
   );
