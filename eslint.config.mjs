@@ -335,11 +335,6 @@ export default tseslint.config(
       'prefer-exponentiation-operator': 'error',
       'prefer-object-spread': 'error',
       'quote-props': ['error', 'as-needed'],
-      quotes: [
-        'error',
-        'single',
-        { avoidEscape: false, allowTemplateLiterals: false },
-      ],
       semi: ['error', 'always'],
       'semi-spacing': ['error', { before: false, after: true }],
       'semi-style': ['error', 'last'],
