@@ -65,7 +65,7 @@ export async function icebergRequest<T = JSONObject>(
   }
   try {
     return parse(text) as T;
-  } catch (e) {
+  } catch {
     return text as T;
   }
 }

@@ -22,7 +22,7 @@ import {
 } from '@aws-sdk/client-athena';
 import { ParquetWriter, ParquetSchema } from 'parquetjs';
 
-import { getMetadata, addSchema, addDataFiles } from '../src';
+import { getMetadata, addDataFiles } from '../src';
 
 const tableBucketARN = process.env['TABLE_BUCKET_ARN'] as string;
 const catalogId = process.env['CATALOG_ID'] as string;
@@ -74,7 +74,8 @@ async function queryRowCount(namespace: string, name: string): Promise<number> {
       new GetQueryResultsCommand({ QueryExecutionId })
     );
     const rowCount = parseInt(
-      queryResults.ResultSet?.Rows?.[1]?.Data?.[0]?.VarCharValue || '0'
+      queryResults.ResultSet?.Rows?.[1]?.Data?.[0]?.VarCharValue ?? '0',
+      10
     );
     return rowCount;
   }
@@ -172,7 +173,6 @@ void test('add multiple parquet files test', async (t) => {
               fields: [
                 { name: 'app', type: 'string', required: true },
                 {
-                  id: 2,
                   name: 'event_datetime',
                   type: 'timestamp' as const,
                   required: true,

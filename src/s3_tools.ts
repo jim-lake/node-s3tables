@@ -76,9 +76,7 @@ function _setMap<T>(
   client: T
 ) {
   let region_map = map.get(region);
-  if (!region_map) {
-    region_map = new Map();
-  }
+  region_map ??= new Map();
   region_map.set(credentials, client);
 }
 
@@ -111,9 +109,9 @@ export interface UpdateManifestListParams {
 }
 export async function updateManifestList(params: UpdateManifestListParams) {
   const { region, credentials, bucket, key, outKey, prepend } = params;
-  if (params.metadata) {
-    fixupMetadata(params.metadata);
-  }
+  const metadata = params.metadata
+    ? fixupMetadata(params.metadata)
+    : params.metadata;
   const s3 = getS3Client({ region, credentials });
   const get = new GetObjectCommand({ Bucket: bucket, Key: key });
   const response = await s3.send(get);
@@ -127,7 +125,7 @@ export async function updateManifestList(params: UpdateManifestListParams) {
   });
   const encoder = new avsc.streams.BlockEncoder(ManifestListType, {
     codec: 'deflate',
-    metadata: params.metadata,
+    metadata,
   } as ConstructorParameters<typeof avsc.streams.BlockEncoder>[1]);
   encoder.pipe(passthrough);
   for (const record of prepend) {

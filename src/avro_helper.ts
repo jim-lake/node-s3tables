@@ -11,12 +11,18 @@ import type {
   IcebergSchema,
 } from './iceberg';
 
-export function fixupMetadata(metadata: Record<string, string | Buffer>) {
+export function fixupMetadata(
+  metadata: Record<string, string | Buffer>
+): Record<string, Buffer> {
+  const newMetadata: Record<string, Buffer> = {};
   for (const [key, value] of Object.entries(metadata)) {
     if (!Buffer.isBuffer(value)) {
-      metadata[key] = Buffer.from(String(value), 'utf8');
+      newMetadata[key] = Buffer.from(value, 'utf8');
+    } else {
+      newMetadata[key] = value;
     }
   }
+  return newMetadata;
 }
 export interface AvroToBufferParams {
   type: avsc.Type;
@@ -26,16 +32,16 @@ export interface AvroToBufferParams {
 export async function avroToBuffer(
   params: AvroToBufferParams
 ): Promise<Buffer> {
-  if (params.metadata) {
-    fixupMetadata(params.metadata);
-  }
+  const metadata = params.metadata
+    ? fixupMetadata(params.metadata)
+    : params.metadata;
   return new Promise((resolve, reject) => {
     try {
       const buffers: Buffer[] = [];
       const opts = {
         writeHeader: true,
         codec: 'deflate',
-        metadata: params.metadata,
+        metadata,
       } as unknown as ConstructorParameters<
         typeof avsc.streams.BlockEncoder
       >[1];
@@ -83,7 +89,7 @@ function _icebergToAvroField(
         break;
       }
       throw new Error(
-        `Unsupported transform: ${field.transform} ${source.type}`
+        `Unsupported transform: ${field.transform} for complex type`
       );
     case 'year':
       avroType = { type: 'int' as const, logicalType: 'year' as const };
@@ -105,9 +111,7 @@ function _icebergToAvroField(
         avroType = 'string' as const;
         break;
       }
-      throw new Error(
-        `Unsupported transform: ${field.transform} ${source.type}`
-      );
+      throw new Error(`Unsupported transform: ${field.transform} for type`);
   }
   return { name: field.name, type: ['null', avroType], default: null };
 }

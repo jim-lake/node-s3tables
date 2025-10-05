@@ -17,7 +17,7 @@ export type JSONArray = JSONValue[];
 function customNumberParser(value: string) {
   if (LosslessJson.isInteger(value)) {
     if (LosslessJson.isSafeNumber(value)) {
-      return parseInt(value);
+      return parseInt(value, 10);
     }
     return BigInt(value);
   }

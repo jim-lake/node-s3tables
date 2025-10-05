@@ -22,7 +22,7 @@ import {
 } from '@aws-sdk/client-athena';
 import { ParquetWriter, ParquetSchema } from 'parquetjs';
 
-import { getMetadata, addSchema, addPartitionSpec, addDataFiles } from '../src';
+import { getMetadata, addPartitionSpec, addDataFiles } from '../src';
 
 const tableBucketARN = process.env['TABLE_BUCKET_ARN'] as string;
 const catalogId = process.env['CATALOG_ID'] as string;
@@ -78,7 +78,8 @@ async function queryRowCount(
       new GetQueryResultsCommand({ QueryExecutionId })
     );
     const rowCount = parseInt(
-      queryResults.ResultSet?.Rows?.[1]?.Data?.[0]?.VarCharValue || '0'
+      queryResults.ResultSet?.Rows?.[1]?.Data?.[0]?.VarCharValue ?? '0',
+      10
     );
     return rowCount;
   }
@@ -178,14 +179,9 @@ void test('multi-level partitioning test', async (t) => {
           iceberg: {
             schema: {
               fields: [
-                { id: 1, name: 'app_name', type: 'string', required: true },
-                {
-                  id: 2,
-                  name: 'event_datetime',
-                  type: 'timestamp',
-                  required: true,
-                },
-                { id: 3, name: 'detail', type: 'string', required: false },
+                { name: 'app_name', type: 'string', required: true },
+                { name: 'event_datetime', type: 'timestamp', required: true },
+                { name: 'detail', type: 'string', required: false },
               ],
             },
           },
@@ -246,6 +242,9 @@ void test('multi-level partitioning test', async (t) => {
   await t.test('add files to app1/2024-01-02 partition', async () => {
     const metadata = await getMetadata({ tableBucketARN, namespace, name });
     const tableBucket = metadata.location.split('/').slice(-1)[0];
+    if (!tableBucket) {
+      throw new Error('tableBucket is undefined');
+    }
 
     const date = new Date('2024-01-02');
     const { key, size } = await createParquetFile(tableBucket, 'app1', date, 2);
@@ -267,6 +266,9 @@ void test('multi-level partitioning test', async (t) => {
   await t.test('add files to app2/2024-01-01 partition', async () => {
     const metadata = await getMetadata({ tableBucketARN, namespace, name });
     const tableBucket = metadata.location.split('/').slice(-1)[0];
+    if (!tableBucket) {
+      throw new Error('tableBucket is undefined');
+    }
 
     const date = new Date('2024-01-01');
     const { key, size } = await createParquetFile(tableBucket, 'app2', date, 3);
@@ -288,6 +290,9 @@ void test('multi-level partitioning test', async (t) => {
   await t.test('add files to app2/2024-01-02 partition', async () => {
     const metadata = await getMetadata({ tableBucketARN, namespace, name });
     const tableBucket = metadata.location.split('/').slice(-1)[0];
+    if (!tableBucket) {
+      throw new Error('tableBucket is undefined');
+    }
 
     const date = new Date('2024-01-02');
     const { key, size } = await createParquetFile(tableBucket, 'app2', date, 4);

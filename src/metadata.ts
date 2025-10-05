@@ -29,18 +29,18 @@ export async function getMetadata(
     interface Response {
       metadata?: IcebergMetadata;
     }
-    const response = await icebergRequest<Response>({
+    const icebergResponse = await icebergRequest<Response>({
       credentials: params.credentials,
       tableBucketARN: params.tableBucketARN,
       method: 'GET',
       suffix: `/namespaces/${params.namespace}/tables/${params.name}`,
     });
-    if (response?.metadata) {
-      return response.metadata;
+    if (icebergResponse.metadata) {
+      return icebergResponse.metadata;
     }
     throw new Error('invalid table metadata');
   }
-  const { region, credentials, ...other } = params;
+  const { ...other } = params;
   const client = getS3TablesClient(params);
   const get_table_cmd = new GetTableCommand(other);
   const response = await client.send(get_table_cmd);

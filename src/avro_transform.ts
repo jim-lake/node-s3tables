@@ -38,7 +38,7 @@ function _encodeValue(
   transform: IcebergTransform | null,
   out_type: IcebergPrimitiveType | null
 ): Buffer | null {
-  if (raw == null || transform === null || out_type === null) {
+  if (raw === null || transform === null || out_type === null) {
     return null;
   }
   switch (transform) {
@@ -90,6 +90,12 @@ function _encodeValue(
           buf.writeUInt8(raw ? 1 : 0);
           return buf;
         }
+        case 'binary':
+        case 'date':
+        case 'time':
+        case 'timestamp':
+        case 'timestamptz':
+          throw new Error(`Identity not implemented for type ${out_type}`);
         default:
           throw new Error(`Identity not implemented for type ${out_type}`);
       }
@@ -150,8 +156,11 @@ export function makeBounds(
     }
     const out_type = _outputType(f.transform, schemaField.type);
     const raw = paritions[f.name];
-    if (raw === undefined) {
+    if (!(f.name in paritions)) {
       throw new Error(`paritions missing ${f.name}`);
+    }
+    if (raw === null || raw === undefined) {
+      return null;
     }
     return _encodeValue(raw, f.transform, out_type);
   });

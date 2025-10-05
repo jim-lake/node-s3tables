@@ -89,9 +89,9 @@ export class YearStringType extends avsc.types.LogicalType {
 
   override _resolve(type: unknown) {
     if (avsc.Type.isType(type, 'int')) {
-      return this._fromValue;
+      return (val: number) => this._fromValue(val);
     }
-    return undefined;
+    return null;
   }
 }
 export class MonthStringType extends avsc.types.LogicalType {
@@ -108,9 +108,9 @@ export class MonthStringType extends avsc.types.LogicalType {
 
   override _resolve(type: unknown) {
     if (avsc.Type.isType(type, 'int')) {
-      return this._fromValue;
+      return (val: number) => this._fromValue(val);
     }
-    return undefined;
+    return null;
   }
 }
 export class DateStringType extends avsc.types.LogicalType {
@@ -128,9 +128,9 @@ export class DateStringType extends avsc.types.LogicalType {
 
   override _resolve(type: unknown) {
     if (avsc.Type.isType(type, 'int')) {
-      return this._fromValue;
+      return (val: number) => this._fromValue(val);
     }
-    return undefined;
+    return null;
   }
 }
 export class HourStringType extends avsc.types.LogicalType {
@@ -146,9 +146,9 @@ export class HourStringType extends avsc.types.LogicalType {
 
   override _resolve(type: unknown) {
     if (avsc.Type.isType(type, 'long')) {
-      return this._fromValue;
+      return (val: number) => this._fromValue(val);
     }
-    return undefined;
+    return null;
   }
 }
 export const AvroRegistry = { long: BigIntType };
