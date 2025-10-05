@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { strict as assert } from 'node:assert';
 import { inspect } from 'node:util';
 import { PassThrough } from 'node:stream';
 import { setTimeout } from 'node:timers/promises';
@@ -49,14 +50,10 @@ async function queryRowCount(
   name: string,
   whereClause?: string
 ): Promise<number> {
-  if (!tableBucketARN) {
-    throw new Error('tableBucketARN is not defined');
-  }
+  assert(tableBucketARN, 'tableBucketARN is not defined');
   const bucketParts = tableBucketARN.split('/');
   const bucket = bucketParts[bucketParts.length - 1];
-  if (!bucket) {
-    throw new Error('Could not extract bucket from tableBucketARN');
-  }
+  assert(bucket, 'Could not extract bucket from tableBucketARN');
   const sql = `SELECT COUNT(*) as row_count FROM ${name}${whereClause ? ` WHERE ${whereClause}` : ''}`;
 
   const { QueryExecutionId } = await athenaClient.send(
@@ -92,7 +89,7 @@ async function queryRowCount(
     );
     return rowCount;
   }
-  throw new Error(`Athena query failed with status: ${status}`);
+  assert.fail(`Athena query failed with status: ${status}`);
 }
 
 async function createParquetFile(
@@ -103,9 +100,7 @@ async function createParquetFile(
 ): Promise<{ key: string; size: number }> {
   const dateParts = date.toISOString().split('T');
   const dateStr = dateParts[0];
-  if (!dateStr) {
-    throw new Error('Could not extract date string from ISO string');
-  }
+  assert(dateStr, 'Could not extract date string from ISO string');
   const s3Key = `data/app_name=${appName}/event_datetime_day=${dateStr}/data-${Date.now()}-${fileIndex}.parquet`;
 
   const schema = new ParquetSchema({
@@ -231,9 +226,7 @@ void test('multi-file multi-partition test', async (t) => {
   await t.test('add multiple files to multiple partitions', async () => {
     const metadata = await getMetadata({ tableBucketARN, namespace, name });
     const tableBucket = metadata.location.split('/').slice(-1)[0];
-    if (!tableBucket) {
-      throw new Error('Could not extract table bucket');
-    }
+    assert(tableBucket, 'Could not extract table bucket');
 
     // Create files for different partitions
     const files = await Promise.all([
@@ -298,25 +291,19 @@ void test('multi-file multi-partition test', async (t) => {
   await t.test('verify total row count', async () => {
     const rowCount = await queryRowCount(namespace, name);
     console.log('Total row count:', rowCount);
-    if (rowCount !== 40) {
-      throw new Error(`Expected 40 rows, got ${rowCount}`);
-    }
+    assert.strictEqual(rowCount, 40, `Expected 40 total rows, got ${rowCount}`);
   });
 
   await t.test('verify app1 partition', async () => {
     const rowCount = await queryRowCount(namespace, name, "app_name = 'app1'");
     console.log('App1 row count:', rowCount);
-    if (rowCount !== 20) {
-      throw new Error(`Expected 20 rows for app1, got ${rowCount}`);
-    }
+    assert.strictEqual(rowCount, 20, `Expected 20 rows for app1, got ${rowCount}`);
   });
 
   await t.test('verify app2 partition', async () => {
     const rowCount = await queryRowCount(namespace, name, "app_name = 'app2'");
     console.log('App2 row count:', rowCount);
-    if (rowCount !== 20) {
-      throw new Error(`Expected 20 rows for app2, got ${rowCount}`);
-    }
+    assert.strictEqual(rowCount, 20, `Expected 20 rows for app2, got ${rowCount}`);
   });
 
   await t.test('verify 2024-01-01 partition', async () => {
@@ -326,9 +313,7 @@ void test('multi-file multi-partition test', async (t) => {
       "date(event_datetime) = date('2024-01-01')"
     );
     console.log('2024-01-01 row count:', rowCount);
-    if (rowCount !== 20) {
-      throw new Error(`Expected 20 rows for 2024-01-01, got ${rowCount}`);
-    }
+    assert.strictEqual(rowCount, 20, `Expected 20 rows for 2024-01-01, got ${rowCount}`);
   });
 
   await t.test('verify 2024-01-02 partition', async () => {
@@ -338,9 +323,7 @@ void test('multi-file multi-partition test', async (t) => {
       "date(event_datetime) = date('2024-01-02')"
     );
     console.log('2024-01-02 row count:', rowCount);
-    if (rowCount !== 20) {
-      throw new Error(`Expected 20 rows for 2024-01-02, got ${rowCount}`);
-    }
+    assert.strictEqual(rowCount, 20, `Expected 20 rows for 2024-01-02, got ${rowCount}`);
   });
 
   await t.test('verify specific partition combinations', async () => {
@@ -354,18 +337,14 @@ void test('multi-file multi-partition test', async (t) => {
     for (const { where, expected } of combinations) {
       const rowCount = await queryRowCount(namespace, name, where);
       console.log(`Row count for ${where}:`, rowCount);
-      if (rowCount !== expected) {
-        throw new Error(`Expected ${expected} rows for ${where}, got ${rowCount}`);
-      }
+      assert.strictEqual(rowCount, expected, `Expected ${expected} rows for ${where}, got ${rowCount}`);
     }
   });
 
   await t.test('add multiple files in multiple lists', async () => {
     const metadata = await getMetadata({ tableBucketARN, namespace, name });
     const tableBucket = metadata.location.split('/').slice(-1)[0];
-    if (!tableBucket) {
-      throw new Error('Could not extract table bucket');
-    }
+    assert(tableBucket, 'Could not extract table bucket');
 
     // Create 4 more files for different partitions
     const files = await Promise.all([
@@ -436,9 +415,7 @@ void test('multi-file multi-partition test', async (t) => {
   await t.test('verify total row count after second batch', async () => {
     const rowCount = await queryRowCount(namespace, name);
     console.log('Total row count after second batch:', rowCount);
-    if (rowCount !== 80) {
-      throw new Error(`Expected 80 rows, got ${rowCount}`);
-    }
+    assert.strictEqual(rowCount, 80, `Expected 80 total rows after second batch, got ${rowCount}`);
   });
 
   await t.test('verify new app partitions', async () => {
@@ -446,9 +423,8 @@ void test('multi-file multi-partition test', async (t) => {
     const app4Count = await queryRowCount(namespace, name, "app_name = 'app4'");
     console.log('App3 row count:', app3Count);
     console.log('App4 row count:', app4Count);
-    if (app3Count !== 20 || app4Count !== 20) {
-      throw new Error(`Expected 20 rows each for app3 and app4, got ${app3Count} and ${app4Count}`);
-    }
+    assert.strictEqual(app3Count, 20, `Expected 20 rows for app3, got ${app3Count}`);
+    assert.strictEqual(app4Count, 20, `Expected 20 rows for app4, got ${app4Count}`);
   });
 
   await t.test('final metadata check', async () => {

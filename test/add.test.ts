@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { strict as assert } from 'node:assert';
 import { inspect } from 'node:util';
 import { PassThrough } from 'node:stream';
 import { setTimeout } from 'node:timers/promises';
@@ -45,14 +46,10 @@ const LFClient = new LakeFormationClient(region ? { region } : {});
 const athenaClient = new AthenaClient(region ? { region } : {});
 
 async function queryRowCount(namespace: string, name: string): Promise<number> {
-  if (!tableBucketARN) {
-    throw new Error('tableBucketARN is not defined');
-  }
+  assert(tableBucketARN, 'tableBucketARN is not defined');
   const bucketParts = tableBucketARN.split('/');
   const bucket = bucketParts[bucketParts.length - 1];
-  if (!bucket) {
-    throw new Error('Could not extract bucket from tableBucketARN');
-  }
+  assert(bucket, 'Could not extract bucket from tableBucketARN');
   const sql = `SELECT COUNT(*) as row_count FROM ${name}`;
 
   const { QueryExecutionId } = await athenaClient.send(
@@ -88,7 +85,7 @@ async function queryRowCount(namespace: string, name: string): Promise<number> {
     );
     return rowCount;
   }
-  throw new Error(`Athena query failed with status: ${status}`);
+  assert.fail(`Athena query failed with status: ${status}`);
 }
 
 async function createParquetFile(
@@ -198,9 +195,7 @@ void test('add multiple parquet files test', async (t) => {
   await t.test('add first parquet file (10 rows)', async () => {
     const metadata = await getMetadata({ tableBucketARN, namespace, name });
     const tableBucket = metadata.location.split('/').slice(-1)[0];
-    if (!tableBucket) {
-      throw new Error('Could not extract table bucket');
-    }
+    assert(tableBucket, 'Could not extract table bucket');
 
     const { key, size } = await createParquetFile(tableBucket, 1);
 
@@ -227,17 +222,13 @@ void test('add multiple parquet files test', async (t) => {
 
     const rowCount = await queryRowCount(namespace, name);
     console.log('Row count after first file:', rowCount);
-    if (rowCount !== 10) {
-      throw new Error(`Expected 10 rows, got ${rowCount}`);
-    }
+    assert.strictEqual(rowCount, 10, `Expected 10 rows after first file, got ${rowCount}`);
   });
 
   await t.test('add second parquet file (10 rows)', async () => {
     const metadata = await getMetadata({ tableBucketARN, namespace, name });
     const tableBucket = metadata.location.split('/').slice(-1)[0];
-    if (!tableBucket) {
-      throw new Error('Could not extract table bucket');
-    }
+    assert(tableBucket, 'Could not extract table bucket');
 
     const { key, size } = await createParquetFile(tableBucket, 2);
 
@@ -264,17 +255,13 @@ void test('add multiple parquet files test', async (t) => {
 
     const rowCount = await queryRowCount(namespace, name);
     console.log('Row count after second file:', rowCount);
-    if (rowCount !== 20) {
-      throw new Error(`Expected 20 rows, got ${rowCount}`);
-    }
+    assert.strictEqual(rowCount, 20, `Expected 20 rows after second file, got ${rowCount}`);
   });
 
   await t.test('add third parquet file (10 rows)', async () => {
     const metadata = await getMetadata({ tableBucketARN, namespace, name });
     const tableBucket = metadata.location.split('/').slice(-1)[0];
-    if (!tableBucket) {
-      throw new Error('Could not extract table bucket');
-    }
+    assert(tableBucket, 'Could not extract table bucket');
 
     const { key, size } = await createParquetFile(tableBucket, 3);
 
@@ -301,9 +288,7 @@ void test('add multiple parquet files test', async (t) => {
 
     const rowCount = await queryRowCount(namespace, name);
     console.log('Row count after third file:', rowCount);
-    if (rowCount !== 30) {
-      throw new Error(`Expected 30 rows, got ${rowCount}`);
-    }
+    assert.strictEqual(rowCount, 30, `Expected 30 rows after third file, got ${rowCount}`);
   });
 
   await t.test('final metadata check', async () => {

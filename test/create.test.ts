@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { strict as assert } from 'node:assert';
 import { inspect } from 'node:util';
 import { PassThrough } from 'node:stream';
 import { setTimeout } from 'node:timers/promises';
@@ -130,9 +131,7 @@ void test('create s3tables test', async (t) => {
     const metadata = await getMetadata({ tableBucketARN, namespace, name });
     const bucketParts = metadata.location.split('/');
     const tableBucket = bucketParts[bucketParts.length - 1];
-    if (!tableBucket) {
-      throw new Error('Could not extract table bucket from metadata location');
-    }
+    assert(tableBucket, 'Could not extract table bucket from metadata location');
     const s3Key = `data/app=test-app/data-${Date.now()}.parquet`;
 
     const schema = new ParquetSchema({
@@ -185,9 +184,7 @@ void test('create s3tables test', async (t) => {
   await t.test('query table with athena', async () => {
     const bucketParts = tableBucketARN.split('/');
     const bucket = bucketParts[bucketParts.length - 1];
-    if (!bucket) {
-      throw new Error('Could not extract bucket from tableBucketARN');
-    }
+    assert(bucket, 'Could not extract bucket from tableBucketARN');
     const sql = `SELECT * FROM ${name}`;
 
     const { QueryExecutionId } = await athenaClient.send(
@@ -218,7 +215,7 @@ void test('create s3tables test', async (t) => {
       );
       console.log('Query results:', inspect(queryResults, { depth: 99 }));
     } else {
-      throw new Error(`Athena query failed with status: ${status}`);
+      assert.fail(`Athena query failed with status: ${status}`);
     }
   });
 });

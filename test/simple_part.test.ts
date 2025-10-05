@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { strict as assert } from 'node:assert';
 import { inspect } from 'node:util';
 import { PassThrough } from 'node:stream';
 import { setTimeout } from 'node:timers/promises';
@@ -49,14 +50,10 @@ async function queryRowCount(
   name: string,
   whereClause?: string
 ): Promise<number> {
-  if (!tableBucketARN) {
-    throw new Error('tableBucketARN is not defined');
-  }
+  assert(tableBucketARN, 'tableBucketARN is not defined');
   const bucketParts = tableBucketARN.split('/');
   const bucket = bucketParts[bucketParts.length - 1];
-  if (!bucket) {
-    throw new Error('Could not extract bucket from tableBucketARN');
-  }
+  assert(bucket, 'Could not extract bucket from tableBucketARN');
   const sql = `SELECT COUNT(*) as row_count FROM ${name}${whereClause ? ` WHERE ${whereClause}` : ''}`;
 
   const { QueryExecutionId } = await athenaClient.send(
@@ -92,7 +89,7 @@ async function queryRowCount(
     );
     return rowCount;
   }
-  throw new Error(`Athena query failed with status: ${status}`);
+  assert.fail(`Athena query failed with status: ${status}`);
 }
 
 async function createParquetFile(
@@ -103,9 +100,7 @@ async function createParquetFile(
 ): Promise<{ key: string; size: number }> {
   const dateParts = date.toISOString().split('T');
   const dateStr = dateParts[0];
-  if (!dateStr) {
-    throw new Error('Could not extract date string from ISO string');
-  }
+  assert(dateStr, 'Could not extract date string from ISO string');
   const s3Key = `data/app_name=${appName}/event_datetime_day=${dateStr}/data-${Date.now()}-${fileIndex}.parquet`;
 
   const schema = new ParquetSchema({
@@ -231,9 +226,7 @@ void test('multi-level partitioning test', async (t) => {
   await t.test('add files to app1/2024-01-01 partition', async () => {
     const metadata = await getMetadata({ tableBucketARN, namespace, name });
     const tableBucket = metadata.location.split('/').slice(-1)[0];
-    if (!tableBucket) {
-      throw new Error('Could not extract table bucket');
-    }
+    assert(tableBucket, 'Could not extract table bucket');
 
     const date = new Date('2024-01-01');
     const { key, size } = await createParquetFile(tableBucket, 'app1', date, 1);
@@ -266,9 +259,7 @@ void test('multi-level partitioning test', async (t) => {
   await t.test('add files to app1/2024-01-02 partition', async () => {
     const metadata = await getMetadata({ tableBucketARN, namespace, name });
     const tableBucket = metadata.location.split('/').slice(-1)[0];
-    if (!tableBucket) {
-      throw new Error('tableBucket is undefined');
-    }
+    assert(tableBucket, 'tableBucket is undefined');
 
     const date = new Date('2024-01-02');
     const { key, size } = await createParquetFile(tableBucket, 'app1', date, 2);
@@ -301,9 +292,7 @@ void test('multi-level partitioning test', async (t) => {
   await t.test('add files to app2/2024-01-01 partition', async () => {
     const metadata = await getMetadata({ tableBucketARN, namespace, name });
     const tableBucket = metadata.location.split('/').slice(-1)[0];
-    if (!tableBucket) {
-      throw new Error('tableBucket is undefined');
-    }
+    assert(tableBucket, 'tableBucket is undefined');
 
     const date = new Date('2024-01-01');
     const { key, size } = await createParquetFile(tableBucket, 'app2', date, 3);
@@ -336,9 +325,7 @@ void test('multi-level partitioning test', async (t) => {
   await t.test('add files to app2/2024-01-02 partition', async () => {
     const metadata = await getMetadata({ tableBucketARN, namespace, name });
     const tableBucket = metadata.location.split('/').slice(-1)[0];
-    if (!tableBucket) {
-      throw new Error('tableBucket is undefined');
-    }
+    assert(tableBucket, 'tableBucket is undefined');
 
     const date = new Date('2024-01-02');
     const { key, size } = await createParquetFile(tableBucket, 'app2', date, 4);
@@ -371,17 +358,13 @@ void test('multi-level partitioning test', async (t) => {
   await t.test('query total row count', async () => {
     const rowCount = await queryRowCount(namespace, name);
     console.log('Total row count:', rowCount);
-    if (rowCount !== 40) {
-      throw new Error(`Expected 40 rows, got ${rowCount}`);
-    }
+    assert.strictEqual(rowCount, 40, `Expected 40 total rows, got ${rowCount}`);
   });
 
   await t.test('query app1 partition', async () => {
     const rowCount = await queryRowCount(namespace, name, "app_name = 'app1'");
     console.log('App1 row count:', rowCount);
-    if (rowCount !== 20) {
-      throw new Error(`Expected 20 rows for app1, got ${rowCount}`);
-    }
+    assert.strictEqual(rowCount, 20, `Expected 20 rows for app1, got ${rowCount}`);
   });
 
   await t.test('query 2024-01-01 partition', async () => {
@@ -391,9 +374,7 @@ void test('multi-level partitioning test', async (t) => {
       "date(event_datetime) = date('2024-01-01')"
     );
     console.log('2024-01-01 row count:', rowCount);
-    if (rowCount !== 20) {
-      throw new Error(`Expected 20 rows for 2024-01-01, got ${rowCount}`);
-    }
+    assert.strictEqual(rowCount, 20, `Expected 20 rows for 2024-01-01, got ${rowCount}`);
   });
 
   await t.test('query specific partition', async () => {
@@ -403,9 +384,7 @@ void test('multi-level partitioning test', async (t) => {
       "app_name = 'app1' AND date(event_datetime) = date('2024-01-01')"
     );
     console.log('App1 2024-01-01 row count:', rowCount);
-    if (rowCount !== 10) {
-      throw new Error(`Expected 10 rows for app1/2024-01-01, got ${rowCount}`);
-    }
+    assert.strictEqual(rowCount, 10, `Expected 10 rows for app1/2024-01-01, got ${rowCount}`);
   });
 
   await t.test('final metadata check', async () => {
