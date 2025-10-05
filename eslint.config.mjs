@@ -260,7 +260,6 @@ export default tseslint.config(
       'no-label-var': 'error',
       'no-restricted-globals': 'error',
       'no-undef-init': 'error',
-      'no-undefined': 'error',
 
       // Complexity rules - VERY STRICT
       'max-depth': ['error', 3],
