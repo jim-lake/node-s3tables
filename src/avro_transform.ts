@@ -144,24 +144,30 @@ function _encodeValue(
       throw new Error(`Unsupported transform ${transform}`);
   }
 }
+type NaNOnly = number & { __nan: true };
+const NaNValue: NaNOnly = NaN as NaNOnly;
+
 export function makeBounds(
   paritions: PartitionRecord,
   spec: IcebergPartitionSpec,
   schema: IcebergSchema
-): (Buffer | null)[] {
+): (Buffer | null | NaNOnly)[] {
   return spec.fields.map((f) => {
     const schemaField = schema.fields.find((sf) => sf.id === f['source-id']);
     if (!schemaField) {
       throw new Error(`Schema field not found for source-id ${f['source-id']}`);
     }
-    const out_type = _outputType(f.transform, schemaField.type);
-    const raw = paritions[f.name];
     if (!(f.name in paritions)) {
       throw new Error(`paritions missing ${f.name}`);
+    }
+    const raw = paritions[f.name];
+    if (typeof raw === 'number' && isNaN(raw)) {
+      return NaNValue;
     }
     if (raw === null || raw === undefined) {
       return null;
     }
+    const out_type = _outputType(f.transform, schemaField.type);
     return _encodeValue(raw, f.transform, out_type);
   });
 }
