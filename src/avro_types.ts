@@ -20,7 +20,7 @@ export interface ManifestFileRecord {
   data_file: {
     content: DataFileContent;
     file_path: string;
-    file_format: 'PARQUET';
+    file_format: 'PARQUET' | 'AVRO' | 'ORC';
     partition: PartitionRecord | null;
     record_count: bigint;
     file_size_in_bytes: bigint;
@@ -28,8 +28,8 @@ export interface ManifestFileRecord {
     value_counts?: Record<number, bigint> | null;
     null_value_counts?: Record<number, bigint> | null;
     nan_value_counts?: Record<number, bigint> | null;
-    lower_bounds?: Record<number, Uint8Array> | null;
-    upper_bounds?: Record<number, Uint8Array> | null;
+    lower_bounds?: Record<number, Buffer> | null;
+    upper_bounds?: Record<number, Buffer> | null;
     key_metadata?: Buffer | null;
     split_offsets?: bigint[] | null;
     equality_ids?: number[] | null;

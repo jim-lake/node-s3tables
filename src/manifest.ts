@@ -12,13 +12,23 @@ import type {
   PartitionRecord,
   PartitionSummary,
 } from './avro_types';
-import type { IcebergMetadata } from './iceberg';
+import type { IcebergMetadata, IcebergSchema } from './iceberg';
 
 export interface AddFile {
   file: string;
   partitions: PartitionRecord;
   fileSize: bigint;
   recordCount: bigint;
+  columnSizes?: Record<string, bigint> | null;
+  valueCounts?: Record<string, bigint> | null;
+  nullValueCounts?: Record<string, bigint> | null;
+  nanValueCounts?: Record<string, bigint> | null;
+  lowerBounds?: Record<string, Buffer> | null;
+  upperBounds?: Record<string, Buffer> | null;
+  keyMetadata?: Buffer | null;
+  splitOffsets?: bigint[] | null;
+  equalityIds?: number[] | null;
+  sortOrderId?: number | null;
 }
 export interface AddManifestParams {
   credentials?: AwsCredentialIdentity | undefined;
@@ -90,6 +100,16 @@ export async function addManifest(
         record_count: file.recordCount,
         file_size_in_bytes: file.fileSize,
         partition: file.partitions,
+        column_sizes: _transformRecord(schema, file.columnSizes),
+        value_counts: _transformRecord(schema, file.valueCounts),
+        null_value_counts: _transformRecord(schema, file.nullValueCounts),
+        nan_value_counts: _transformRecord(schema, file.nanValueCounts),
+        lower_bounds: _transformRecord(schema, file.lowerBounds),
+        upper_bounds: _transformRecord(schema, file.upperBounds),
+        key_metadata: file.keyMetadata ?? null,
+        split_offsets: file.splitOffsets ?? null,
+        equality_ids: file.equalityIds ?? null,
+        sort_order_id: file.sortOrderId ?? null,
       },
     };
   });
@@ -128,6 +148,22 @@ export async function addManifest(
     partitions,
   };
   return manifest_record;
+}
+function _transformRecord<T>(
+  schema: IcebergSchema,
+  map: Record<string, T> | null | undefined
+): Record<number, T> | null {
+  let ret: Record<number, T> | null = null;
+  if (map) {
+    for (const field of schema.fields) {
+      const value = map[field.name];
+      if (value !== undefined) {
+        ret ??= {};
+        ret[field.id] = value;
+      }
+    }
+  }
+  return ret;
 }
 function _minBuffer(a: Buffer | null, b: Buffer | null): Buffer | null {
   if (!a && !b) {
