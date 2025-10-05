@@ -1,4 +1,5 @@
-import { test } from 'node:test';
+import { test } from './helpers/test_helper';
+import { log } from './helpers/log_helper';
 import { strict as assert } from 'node:assert';
 import { inspect } from 'node:util';
 import { PassThrough } from 'node:stream';
@@ -129,7 +130,6 @@ void test('add multiple parquet files test', async (t) => {
   let name: string;
 
   t.after(async () => {
-    console.log('afterAll: cleanup');
     try {
       if (name) {
         await client.send(
@@ -153,7 +153,7 @@ void test('add multiple parquet files test', async (t) => {
     const namespace_result = await client.send(
       new CreateNamespaceCommand({ tableBucketARN, namespace: [namespace] })
     );
-    console.log('Namespace created:', namespace, namespace_result);
+    log('Namespace created:', namespace, namespace_result);
   });
 
   await t.test('add lake formation tag', async () => {
@@ -162,7 +162,7 @@ void test('add multiple parquet files test', async (t) => {
       LFTags: [{ TagKey: 'AccessLevel', TagValues: ['Public'] }],
     });
     const response = await LFClient.send(command);
-    console.log('add tag response:', response);
+    log('add tag response:', response);
   });
 
   await t.test('create table', async () => {
@@ -189,7 +189,7 @@ void test('add multiple parquet files test', async (t) => {
         },
       })
     );
-    console.log('Table created:', name, table_result);
+    log('Table created:', name, table_result);
   });
 
   await t.test('add first parquet file (10 rows)', async () => {
@@ -218,10 +218,10 @@ void test('add multiple parquet files test', async (t) => {
         },
       ],
     });
-    console.log('addDataFiles result 1:', result);
+    log('addDataFiles result 1:', result);
 
     const rowCount = await queryRowCount(namespace, name);
-    console.log('Row count after first file:', rowCount);
+    log('Row count after first file:', rowCount);
     assert.strictEqual(rowCount, 10, `Expected 10 rows after first file, got ${rowCount}`);
   });
 
@@ -251,10 +251,10 @@ void test('add multiple parquet files test', async (t) => {
         },
       ],
     });
-    console.log('addDataFiles result 2:', result);
+    log('addDataFiles result 2:', result);
 
     const rowCount = await queryRowCount(namespace, name);
-    console.log('Row count after second file:', rowCount);
+    log('Row count after second file:', rowCount);
     assert.strictEqual(rowCount, 20, `Expected 20 rows after second file, got ${rowCount}`);
   });
 
@@ -284,15 +284,15 @@ void test('add multiple parquet files test', async (t) => {
         },
       ],
     });
-    console.log('addDataFiles result 3:', result);
+    log('addDataFiles result 3:', result);
 
     const rowCount = await queryRowCount(namespace, name);
-    console.log('Row count after third file:', rowCount);
+    log('Row count after third file:', rowCount);
     assert.strictEqual(rowCount, 30, `Expected 30 rows after third file, got ${rowCount}`);
   });
 
   await t.test('final metadata check', async () => {
     const metadata = await getMetadata({ tableBucketARN, namespace, name });
-    console.log('Final metadata:', inspect(metadata, { depth: 99 }));
+    log('Final metadata:', inspect(metadata, { depth: 99 }));
   });
 });
