@@ -161,12 +161,20 @@ void test('create s3tables test', async (t) => {
       tableBucketARN,
       namespace,
       name,
-      file: `s3://${tableBucket}/${s3Key}`,
-      schemaId: 1,
-      specId: 0,
-      partitions: { app: 'test-app' },
-      recordCount: 1n,
-      fileSize: BigInt(fileBuffer.length),
+      lists: [
+        {
+          specId: 0,
+          schemaId: 1,
+          files: [
+            {
+              file: `s3://${tableBucket}/${s3Key}`,
+              partitions: { app: 'test-app' },
+              recordCount: 1n,
+              fileSize: BigInt(fileBuffer.length),
+            },
+          ],
+        },
+      ],
     });
     console.log('addDataFiles result:', result);
   });

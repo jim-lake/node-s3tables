@@ -242,12 +242,23 @@ void test('multi-level partitioning test', async (t) => {
       tableBucketARN,
       namespace,
       name,
-      file: `s3://${tableBucket}/${key}`,
-      schemaId: 0,
-      specId: 1,
-      partitions: { app_name: 'app1', event_datetime_day: '2024-01-01' },
-      recordCount: 10n,
-      fileSize: BigInt(size),
+      lists: [
+        {
+          specId: 1,
+          schemaId: 0,
+          files: [
+            {
+              file: `s3://${tableBucket}/${key}`,
+              partitions: {
+                app_name: 'app1',
+                event_datetime_day: '2024-01-01',
+              },
+              recordCount: 10n,
+              fileSize: BigInt(size),
+            },
+          ],
+        },
+      ],
     });
     console.log('addDataFiles result app1/2024-01-01:', result);
   });
@@ -266,12 +277,23 @@ void test('multi-level partitioning test', async (t) => {
       tableBucketARN,
       namespace,
       name,
-      file: `s3://${tableBucket}/${key}`,
-      schemaId: 0,
-      specId: 1,
-      partitions: { app_name: 'app1', event_datetime_day: '2024-01-02' },
-      recordCount: 10n,
-      fileSize: BigInt(size),
+      lists: [
+        {
+          specId: 1,
+          schemaId: 0,
+          files: [
+            {
+              file: `s3://${tableBucket}/${key}`,
+              partitions: {
+                app_name: 'app1',
+                event_datetime_day: '2024-01-02',
+              },
+              recordCount: 10n,
+              fileSize: BigInt(size),
+            },
+          ],
+        },
+      ],
     });
     console.log('addDataFiles result app1/2024-01-02:', result);
   });
@@ -290,12 +312,23 @@ void test('multi-level partitioning test', async (t) => {
       tableBucketARN,
       namespace,
       name,
-      file: `s3://${tableBucket}/${key}`,
-      schemaId: 0,
-      specId: 1,
-      partitions: { app_name: 'app2', event_datetime_day: '2024-01-01' },
-      recordCount: 10n,
-      fileSize: BigInt(size),
+      lists: [
+        {
+          specId: 1,
+          schemaId: 0,
+          files: [
+            {
+              file: `s3://${tableBucket}/${key}`,
+              partitions: {
+                app_name: 'app2',
+                event_datetime_day: '2024-01-01',
+              },
+              recordCount: 10n,
+              fileSize: BigInt(size),
+            },
+          ],
+        },
+      ],
     });
     console.log('addDataFiles result app2/2024-01-01:', result);
   });
@@ -314,12 +347,23 @@ void test('multi-level partitioning test', async (t) => {
       tableBucketARN,
       namespace,
       name,
-      file: `s3://${tableBucket}/${key}`,
-      schemaId: 0,
-      specId: 1,
-      partitions: { app_name: 'app2', event_datetime_day: '2024-01-02' },
-      recordCount: 10n,
-      fileSize: BigInt(size),
+      lists: [
+        {
+          specId: 1,
+          schemaId: 0,
+          files: [
+            {
+              file: `s3://${tableBucket}/${key}`,
+              partitions: {
+                app_name: 'app2',
+                event_datetime_day: '2024-01-02',
+              },
+              recordCount: 10n,
+              fileSize: BigInt(size),
+            },
+          ],
+        },
+      ],
     });
     console.log('addDataFiles result app2/2024-01-02:', result);
   });

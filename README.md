@@ -143,12 +143,7 @@ Adds data files to an S3 table by creating a new snapshot.
 - `params.tableBucketARN` (string) - The ARN of the table bucket
 - `params.namespace` (string) - The namespace name
 - `params.name` (string) - The table name
-- `params.file` (string) - S3 URL of the data file to add
-- `params.specId` (number) - The partition spec ID to use
-- `params.schemaId` (number) - The schema ID to use
-- `params.partitions` (PartitionRecord) - Partition values for the data file
-- `params.fileSize` (bigint) - Size of the data file in bytes
-- `params.recordCount` (bigint) - Number of records in the data file
+- `params.lists` (AddFileList[]) - Array of file lists to add
 - `params.credentials` (AwsCredentialIdentity, optional) - AWS credentials
 
 **Returns:** Promise<string>
@@ -158,12 +153,20 @@ await addDataFiles({
   tableBucketARN: 'arn:aws:s3tables:us-west-2:123456789012:bucket/my-bucket',
   namespace: 'sales',
   name: 'daily_sales',
-  file: 's3://my-bucket/data/sales-2024-01-01.parquet',
-  schemaId: 2,
-  specId: 1,
-  partitions: { sale_date_day: '2024-01-01' },
-  recordCount: 1000n,
-  fileSize: 52428n,
+  lists: [
+    {
+      specId: 1,
+      schemaId: 2,
+      files: [
+        {
+          file: 's3://my-bucket/data/sales-2024-01-01.parquet',
+          partitions: { sale_date_day: '2024-01-01' },
+          recordCount: 1000n,
+          fileSize: 52428n,
+        },
+      ],
+    },
+  ],
 });
 ```
 
@@ -191,6 +194,27 @@ await setCurrentCommit({
 ```
 
 ## Type Definitions
+
+### AddFileList
+
+```typescript
+interface AddFileList {
+  specId: number;
+  schemaId: number;
+  files: AddFile[];
+}
+```
+
+### AddFile
+
+```typescript
+interface AddFile {
+  file: string;
+  partitions: PartitionRecord;
+  fileSize: bigint;
+  recordCount: bigint;
+}
+```
 
 ### IcebergSchemaField
 

@@ -208,12 +208,20 @@ void test('add multiple parquet files test', async (t) => {
       tableBucketARN,
       namespace,
       name,
-      file: `s3://${tableBucket}/${key}`,
-      schemaId: 0,
-      specId: 0,
-      partitions: { app: 'test-app' },
-      recordCount: 10n,
-      fileSize: BigInt(size),
+      lists: [
+        {
+          specId: 0,
+          schemaId: 0,
+          files: [
+            {
+              file: `s3://${tableBucket}/${key}`,
+              partitions: { app: 'test-app' },
+              recordCount: 10n,
+              fileSize: BigInt(size),
+            },
+          ],
+        },
+      ],
     });
     console.log('addDataFiles result 1:', result);
 
@@ -237,12 +245,20 @@ void test('add multiple parquet files test', async (t) => {
       tableBucketARN,
       namespace,
       name,
-      file: `s3://${tableBucket}/${key}`,
-      schemaId: 0,
-      specId: 0,
-      partitions: { app: 'test-app' },
-      recordCount: 10n,
-      fileSize: BigInt(size),
+      lists: [
+        {
+          specId: 0,
+          schemaId: 0,
+          files: [
+            {
+              file: `s3://${tableBucket}/${key}`,
+              partitions: { app: 'test-app' },
+              recordCount: 10n,
+              fileSize: BigInt(size),
+            },
+          ],
+        },
+      ],
     });
     console.log('addDataFiles result 2:', result);
 
@@ -266,12 +282,20 @@ void test('add multiple parquet files test', async (t) => {
       tableBucketARN,
       namespace,
       name,
-      file: `s3://${tableBucket}/${key}`,
-      schemaId: 0,
-      specId: 0,
-      partitions: { app: 'test-app' },
-      recordCount: 10n,
-      fileSize: BigInt(size),
+      lists: [
+        {
+          specId: 0,
+          schemaId: 0,
+          files: [
+            {
+              file: `s3://${tableBucket}/${key}`,
+              partitions: { app: 'test-app' },
+              recordCount: 10n,
+              fileSize: BigInt(size),
+            },
+          ],
+        },
+      ],
     });
     console.log('addDataFiles result 3:', result);
 
