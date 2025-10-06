@@ -1,6 +1,6 @@
 {
   "name": "node-s3tables",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "node api for dealing with s3tables",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -18,7 +18,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git@github.com:jim-lake/node-mysql-cron.git"
+    "url": "git@github.com:jim-lake/node-s3tables.git"
   },
   "author": {
     "name": "Jim Lake"
