@@ -156,16 +156,14 @@ function _transformRecord<T>(
   if (!map) {
     return null;
   }
-
-  const result: { key: number; value: T }[] = [];
+  const ret: { key: number; value: T }[] = [];
   for (const field of schema.fields) {
     const value = map[field.name];
     if (value !== undefined) {
-      // Keep BigInt values as BigInt for Avro long type
-      result.push({ key: field.id, value });
+      ret.push({ key: field.id, value });
     }
   }
-  return result.length > 0 ? result : null;
+  return ret.length > 0 ? ret : null;
 }
 function _minBuffer(a: Buffer | null, b: Buffer | null): Buffer | null {
   if (!a && !b) {
