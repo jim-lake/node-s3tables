@@ -1,5 +1,33 @@
 import { AwsCredentialIdentity } from '@aws-sdk/types';
-import { S3TablesClientConfig } from '@aws-sdk/client-s3tables';
+
+type RawValue = string | number | bigint | Buffer | null;
+type PartitionRecord = Record<string, RawValue>;
+interface PartitionSummary {
+    contains_null: boolean;
+    contains_nan?: boolean | null;
+    lower_bound?: Buffer | null;
+    upper_bound?: Buffer | null;
+}
+declare enum ListContent {
+    DATA = 0,
+    DELETES = 1
+}
+interface ManifestListRecord {
+    manifest_path: string;
+    manifest_length: bigint;
+    partition_spec_id: number;
+    content: ListContent;
+    sequence_number: bigint;
+    min_sequence_number: bigint;
+    added_snapshot_id: bigint;
+    added_data_files_count: number;
+    existing_data_files_count: number;
+    deleted_data_files_count: number;
+    added_rows_count: bigint;
+    existing_rows_count: bigint;
+    deleted_rows_count: bigint;
+    partitions?: PartitionSummary[] | null;
+}
 
 type IcebergTransform = 'identity' | 'year' | 'month' | 'day' | 'hour' | `bucket[${number}]` | `truncate[${number}]`;
 interface IcebergPartitionField {
@@ -39,15 +67,61 @@ interface IcebergPartitionSpec {
     'spec-id': number;
     fields: IcebergPartitionField[];
 }
+interface IcebergSnapshot {
+    'snapshot-id': bigint | number;
+    'parent-snapshot-id'?: bigint | number;
+    'sequence-number': number;
+    'timestamp-ms': number;
+    'manifest-list': string;
+    summary: Record<string, string>;
+    'schema-id'?: number;
+}
 interface IcebergMetadata {
     'last-column-id': number;
     'current-schema-id': number;
     schemas: IcebergSchema[];
+    snapshots: IcebergSnapshot[];
     'default-spec-id': number;
     'partition-specs': IcebergPartitionSpec[];
     'last-partition-id': number;
-    'current-snapshot-id': number;
+    'current-snapshot-id': bigint | number;
+    location: string;
 }
+
+interface AddFile {
+    file: string;
+    partitions: PartitionRecord;
+    fileSize: bigint;
+    recordCount: bigint;
+    columnSizes?: Record<string, bigint> | null | undefined;
+    valueCounts?: Record<string, bigint> | null | undefined;
+    nullValueCounts?: Record<string, bigint> | null | undefined;
+    nanValueCounts?: Record<string, bigint> | null | undefined;
+    lowerBounds?: Record<string, Buffer> | null | undefined;
+    upperBounds?: Record<string, Buffer> | null | undefined;
+    keyMetadata?: Buffer | null | undefined;
+    splitOffsets?: bigint[] | null | undefined;
+    equalityIds?: number[] | null | undefined;
+    sortOrderId?: number | null | undefined;
+}
+interface AddManifestParams {
+    credentials?: AwsCredentialIdentity | undefined;
+    region: string;
+    metadata: IcebergMetadata;
+    schemaId: number;
+    specId: number;
+    snapshotId: bigint;
+    sequenceNumber: bigint;
+    files: AddFile[];
+}
+declare function addManifest(params: AddManifestParams): Promise<ManifestListRecord>;
+
+type JSONPrimitive = string | number | boolean | null | bigint | undefined;
+type JSONValue = JSONPrimitive | JSONObject | JSONArray;
+interface JSONObject {
+    [key: string]: JSONValue;
+}
+type JSONArray = JSONValue[];
 
 type TableLocation = {
     tableArn: string;
@@ -57,7 +131,8 @@ type TableLocation = {
     name: string;
 };
 type GetMetadataParams = TableLocation & {
-    config?: S3TablesClientConfig;
+    region?: string;
+    credentials?: AwsCredentialIdentity;
 };
 declare function getMetadata(params: GetMetadataParams): Promise<IcebergMetadata>;
 interface AddSchemaParams {
@@ -68,7 +143,7 @@ interface AddSchemaParams {
     schemaId: number;
     fields: IcebergSchemaField[];
 }
-declare function addSchema(params: AddSchemaParams): Promise<string>;
+declare function addSchema(params: AddSchemaParams): Promise<JSONObject>;
 interface AddPartitionSpecParams {
     credentials?: AwsCredentialIdentity;
     tableBucketARN: string;
@@ -77,13 +152,38 @@ interface AddPartitionSpecParams {
     specId: number;
     fields: IcebergPartitionField[];
 }
-declare function addPartitionSpec(params: AddPartitionSpecParams): Promise<string>;
+declare function addPartitionSpec(params: AddPartitionSpecParams): Promise<JSONObject>;
+
+interface AddFileList {
+    specId: number;
+    schemaId: number;
+    files: AddFile[];
+}
+interface AddDataFilesParams {
+    credentials?: AwsCredentialIdentity;
+    tableBucketARN: string;
+    namespace: string;
+    name: string;
+    lists: AddFileList[];
+}
+declare function addDataFiles(params: AddDataFilesParams): Promise<JSONObject>;
+interface SetCurrentCommitParams {
+    credentials?: AwsCredentialIdentity;
+    tableBucketARN: string;
+    namespace: string;
+    name: string;
+    snapshotId: bigint;
+}
+declare function setCurrentCommit(params: SetCurrentCommitParams): Promise<JSONObject>;
 
 declare const _default: {
     getMetadata: typeof getMetadata;
     addSchema: typeof addSchema;
     addPartitionSpec: typeof addPartitionSpec;
+    addManifest: typeof addManifest;
+    addDataFiles: typeof addDataFiles;
+    setCurrentCommit: typeof setCurrentCommit;
 };
 
-export { addPartitionSpec, addSchema, _default as default, getMetadata };
-export type { AddPartitionSpecParams, AddSchemaParams, GetMetadataParams, IcebergComplexType, IcebergMetadata, IcebergPartitionField, IcebergPartitionSpec, IcebergPrimitiveType, IcebergSchema, IcebergSchemaField, IcebergTransform, IcebergType, TableLocation };
+export { addDataFiles, addManifest, addPartitionSpec, addSchema, _default as default, getMetadata, setCurrentCommit };
+export type { AddDataFilesParams, AddFile, AddFileList, AddManifestParams, AddPartitionSpecParams, AddSchemaParams, GetMetadataParams, IcebergComplexType, IcebergMetadata, IcebergPartitionField, IcebergPartitionSpec, IcebergPrimitiveType, IcebergSchema, IcebergSchemaField, IcebergSnapshot, IcebergTransform, IcebergType, SetCurrentCommitParams, TableLocation };
