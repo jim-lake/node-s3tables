@@ -15,6 +15,7 @@ import {
   getMetadata,
   addSchema,
   addPartitionSpec,
+  addManifest,
   addDataFiles,
   setCurrentCommit,
 } from 'node-s3tables';
@@ -134,6 +135,42 @@ await addPartitionSpec({
 });
 ```
 
+### addManifest(params)
+
+Creates a manifest file for data files and returns a manifest list record.
+
+**Parameters:**
+
+- `params.credentials` (AwsCredentialIdentity, optional) - AWS credentials
+- `params.region` (string) - AWS region
+- `params.metadata` (IcebergMetadata) - Table metadata
+- `params.schemaId` (number) - Schema ID to use
+- `params.specId` (number) - Partition spec ID to use
+- `params.snapshotId` (bigint) - Snapshot ID
+- `params.sequenceNumber` (bigint) - Sequence number
+- `params.files` (AddFile[]) - Array of data files
+
+**Returns:** Promise<ManifestListRecord>
+
+```javascript
+const manifestRecord = await addManifest({
+  region: 'us-west-2',
+  metadata: tableMetadata,
+  schemaId: 2,
+  specId: 1,
+  snapshotId: 4183020680887155442n,
+  sequenceNumber: 1n,
+  files: [
+    {
+      file: 's3://my-bucket/data/sales-2024-01-01.parquet',
+      partitions: { sale_date_day: '2024-01-01' },
+      recordCount: 1000n,
+      fileSize: 52428n,
+    },
+  ],
+});
+```
+
 ### addDataFiles(params)
 
 Adds data files to an S3 table by creating a new snapshot.
@@ -213,6 +250,16 @@ interface AddFile {
   partitions: PartitionRecord;
   fileSize: bigint;
   recordCount: bigint;
+  columnSizes?: Record<string, bigint> | null;
+  valueCounts?: Record<string, bigint> | null;
+  nullValueCounts?: Record<string, bigint> | null;
+  nanValueCounts?: Record<string, bigint> | null;
+  lowerBounds?: Record<string, Buffer> | null;
+  upperBounds?: Record<string, Buffer> | null;
+  keyMetadata?: Buffer | null;
+  splitOffsets?: bigint[] | null;
+  equalityIds?: number[] | null;
+  sortOrderId?: number | null;
 }
 ```
 
@@ -265,6 +312,58 @@ Supported partition transforms:
 
 ## Testing
 
+### Prerequisites
+
+The tests require AWS credentials and S3 Tables resources. Set up the following environment variables in a `.env` file:
+
+```bash
+TABLE_BUCKET_ARN=arn:aws:s3tables:us-west-2:123456789012:bucket/your-test-bucket
+CATALOG_ID=123456789012:s3tablescatalog/your-test-bucket
+OUTPUT_BUCKET=your-output-bucket
+```
+
+### AWS Service Calls and Permissions
+
+The tests make calls to multiple AWS services and require the following permissions:
+
+**S3 Tables:**
+
+- `s3tables:CreateNamespace`
+- `s3tables:DeleteNamespace`
+- `s3tables:CreateTable`
+- `s3tables:DeleteTable`
+- `s3tables:GetTableMetadata`
+- `s3tables:UpdateTableMetadata`
+
+**S3:**
+
+- `s3:PutObject` (for uploading test Parquet files)
+- `s3:GetObject` (for reading manifest files)
+
+**Lake Formation:**
+
+- `lakeformation:AddLFTagsToResource` (adds `AccessLevel: Public` tag to namespaces)
+
+**Athena:**
+
+- `athena:StartQueryExecution`
+- `athena:GetQueryExecution`
+- `athena:GetQueryResults`
+
+**Lake Formation Setup:**
+The tests expect a Lake Formation tag with key `AccessLevel` and value `Public` to exist in your account. This tag is automatically applied to test namespaces to allow Athena query permissions.
+
+### Test Dependencies
+
+The test suite uses additional dependencies for creating test data:
+
+- `@aws-sdk/client-athena` - For running Athena queries in tests
+- `@aws-sdk/client-lakeformation` - For Lake Formation permissions
+- `parquetjs` - For creating test Parquet files
+- `dotenv-cli` - For loading environment variables
+
+### Running Tests
+
 Run the test suite:
 
 ```bash
@@ -277,11 +376,11 @@ Run tests with coverage:
 npm run test:cover
 ```
 
-The tests require environment variables to be set:
+Run a single test file:
 
-- `TABLE_ARN` - The ARN of an S3 table for testing
-- `TABLE_BUCKET_ARN` - The ARN of the table bucket
-- `TABLE_NAMESPACE` - The namespace name
+```bash
+npm run test:single test/create.test.ts
+```
 
 ## Configuration
 
