@@ -1,4 +1,5 @@
-import { test } from 'node:test';
+import { test } from './helpers/test_helper';
+import { log } from './helpers/log_helper';
 import { strict as assert } from 'node:assert';
 import { inspect } from 'node:util';
 import { PassThrough } from 'node:stream';
@@ -139,19 +140,19 @@ void test('multi-level partitioning test', async (t) => {
   let name: string;
 
   t.after(async () => {
-    console.log('afterAll: cleanup');
+    log('afterAll: cleanup');
     try {
       if (name) {
         await client.send(
           new DeleteTableCommand({ tableBucketARN, namespace, name })
         );
-        console.log('Table deleted:', namespace, name);
+        log('Table deleted:', namespace, name);
       }
       if (namespace) {
         await client.send(
           new DeleteNamespaceCommand({ tableBucketARN, namespace })
         );
-        console.log('Namespace deleted:', namespace);
+        log('Namespace deleted:', namespace);
       }
     } catch (error) {
       console.error('Cleanup failed:', error);
@@ -163,7 +164,7 @@ void test('multi-level partitioning test', async (t) => {
     const namespace_result = await client.send(
       new CreateNamespaceCommand({ tableBucketARN, namespace: [namespace] })
     );
-    console.log('Namespace created:', namespace, namespace_result);
+    log('Namespace created:', namespace, namespace_result);
   });
 
   await t.test('add lake formation tag', async () => {
@@ -172,7 +173,7 @@ void test('multi-level partitioning test', async (t) => {
       LFTags: [{ TagKey: 'AccessLevel', TagValues: ['Public'] }],
     });
     const response = await LFClient.send(command);
-    console.log('add tag response:', response);
+    log('add tag response:', response);
   });
 
   await t.test('create table', async () => {
@@ -196,7 +197,7 @@ void test('multi-level partitioning test', async (t) => {
         },
       })
     );
-    console.log('Table created:', name, table_result);
+    log('Table created:', name, table_result);
   });
 
   await t.test('add partition spec', async () => {
@@ -220,7 +221,7 @@ void test('multi-level partitioning test', async (t) => {
         },
       ],
     });
-    console.log('Partition spec added:', result);
+    log('Partition spec added:', result);
   });
 
   await t.test('add files to app1/2024-01-01 partition', async () => {
@@ -253,7 +254,7 @@ void test('multi-level partitioning test', async (t) => {
         },
       ],
     });
-    console.log('addDataFiles result app1/2024-01-01:', result);
+    log('addDataFiles result app1/2024-01-01:', result);
   });
 
   await t.test('add files to app1/2024-01-02 partition', async () => {
@@ -286,7 +287,7 @@ void test('multi-level partitioning test', async (t) => {
         },
       ],
     });
-    console.log('addDataFiles result app1/2024-01-02:', result);
+    log('addDataFiles result app1/2024-01-02:', result);
   });
 
   await t.test('add files to app2/2024-01-01 partition', async () => {
@@ -319,7 +320,7 @@ void test('multi-level partitioning test', async (t) => {
         },
       ],
     });
-    console.log('addDataFiles result app2/2024-01-01:', result);
+    log('addDataFiles result app2/2024-01-01:', result);
   });
 
   await t.test('add files to app2/2024-01-02 partition', async () => {
@@ -352,18 +353,18 @@ void test('multi-level partitioning test', async (t) => {
         },
       ],
     });
-    console.log('addDataFiles result app2/2024-01-02:', result);
+    log('addDataFiles result app2/2024-01-02:', result);
   });
 
   await t.test('query total row count', async () => {
     const rowCount = await queryRowCount(namespace, name);
-    console.log('Total row count:', rowCount);
+    log('Total row count:', rowCount);
     assert.strictEqual(rowCount, 40, `Expected 40 total rows, got ${rowCount}`);
   });
 
   await t.test('query app1 partition', async () => {
     const rowCount = await queryRowCount(namespace, name, "app_name = 'app1'");
-    console.log('App1 row count:', rowCount);
+    log('App1 row count:', rowCount);
     assert.strictEqual(rowCount, 20, `Expected 20 rows for app1, got ${rowCount}`);
   });
 
@@ -373,7 +374,7 @@ void test('multi-level partitioning test', async (t) => {
       name,
       "date(event_datetime) = date('2024-01-01')"
     );
-    console.log('2024-01-01 row count:', rowCount);
+    log('2024-01-01 row count:', rowCount);
     assert.strictEqual(rowCount, 20, `Expected 20 rows for 2024-01-01, got ${rowCount}`);
   });
 
@@ -383,12 +384,12 @@ void test('multi-level partitioning test', async (t) => {
       name,
       "app_name = 'app1' AND date(event_datetime) = date('2024-01-01')"
     );
-    console.log('App1 2024-01-01 row count:', rowCount);
+    log('App1 2024-01-01 row count:', rowCount);
     assert.strictEqual(rowCount, 10, `Expected 10 rows for app1/2024-01-01, got ${rowCount}`);
   });
 
   await t.test('final metadata check', async () => {
     const metadata = await getMetadata({ tableBucketARN, namespace, name });
-    console.log('Final metadata:', inspect(metadata, { depth: 99 }));
+    log('Final metadata:', inspect(metadata, { depth: 99 }));
   });
 });

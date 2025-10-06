@@ -1,4 +1,5 @@
-import { test } from 'node:test';
+import { test } from './helpers/test_helper';
+import { log } from './helpers/log_helper';
 import { strict as assert } from 'node:assert';
 import { inspect } from 'node:util';
 import { PassThrough } from 'node:stream';
@@ -51,19 +52,19 @@ void test('create s3tables test', async (t) => {
   let tableArn: string;
 
   t.after(async () => {
-    console.log('afterAll: cleanup');
+    log('afterAll: cleanup');
     try {
       if (name) {
         await client.send(
           new DeleteTableCommand({ tableBucketARN, namespace, name })
         );
-        console.log('Table deleted:', namespace, name);
+        log('Table deleted:', namespace, name);
       }
       if (namespace) {
         await client.send(
           new DeleteNamespaceCommand({ tableBucketARN, namespace })
         );
-        console.log('Namespace deleted:', namespace);
+        log('Namespace deleted:', namespace);
       }
     } catch (error) {
       console.error('Cleanup failed:', error);
@@ -75,7 +76,7 @@ void test('create s3tables test', async (t) => {
     const namespace_result = await client.send(
       new CreateNamespaceCommand({ tableBucketARN, namespace: [namespace] })
     );
-    console.log('Namespace created:', namespace, namespace_result);
+    log('Namespace created:', namespace, namespace_result);
   });
   await t.test('add lake formation tag', async () => {
     const command = new AddLFTagsToResourceCommand({
@@ -83,7 +84,7 @@ void test('create s3tables test', async (t) => {
       LFTags: [{ TagKey: 'AccessLevel', TagValues: ['Public'] }],
     });
     const response = await LFClient.send(command);
-    console.log('add tag response:', response);
+    log('add tag response:', response);
   });
   await t.test('create table', async () => {
     name = 'test_table1';
@@ -103,7 +104,7 @@ void test('create s3tables test', async (t) => {
       })
     );
     tableArn = table_result.tableARN as string;
-    console.log('Table created:', name, table_result);
+    log('Table created:', name, table_result);
   });
   await t.test('add schema', async () => {
     const add_result = await addSchema({
@@ -121,11 +122,11 @@ void test('create s3tables test', async (t) => {
         },
       ],
     });
-    console.log('add_result:', add_result);
+    log('add_result:', add_result);
   });
   await t.test('get metadata by tableARN', async () => {
     const metadata_by_arn = await getMetadata({ tableArn });
-    console.log('metadata_by_arn:', inspect(metadata_by_arn, { depth: 99 }));
+    log('metadata_by_arn:', inspect(metadata_by_arn, { depth: 99 }));
   });
   await t.test('create parquet file and add to table', async () => {
     const metadata = await getMetadata({ tableBucketARN, namespace, name });
@@ -175,11 +176,11 @@ void test('create s3tables test', async (t) => {
         },
       ],
     });
-    console.log('addDataFiles result:', result);
+    log('addDataFiles result:', result);
   });
   await t.test('get metadata after add', async () => {
     const metadata = await getMetadata({ tableBucketARN, namespace, name });
-    console.log('metadata:', inspect(metadata, { depth: 99 }));
+    log('metadata:', inspect(metadata, { depth: 99 }));
   });
   await t.test('query table with athena', async () => {
     const bucketParts = tableBucketARN.split('/');
@@ -209,11 +210,11 @@ void test('create s3tables test', async (t) => {
     }
 
     if (status === 'SUCCEEDED') {
-      console.log('Athena query succeeded');
+      log('Athena query succeeded');
       const queryResults = await athenaClient.send(
         new GetQueryResultsCommand({ QueryExecutionId })
       );
-      console.log('Query results:', inspect(queryResults, { depth: 99 }));
+      log('Query results:', inspect(queryResults, { depth: 99 }));
     } else {
       assert.fail(`Athena query failed with status: ${status}`);
     }

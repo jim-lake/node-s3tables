@@ -1,4 +1,5 @@
-import { test } from 'node:test';
+import { test } from './helpers/test_helper';
+import { log } from './helpers/log_helper';
 import { strict as assert } from 'node:assert';
 import { inspect } from 'node:util';
 import { PassThrough } from 'node:stream';
@@ -139,19 +140,19 @@ void test('multi-file multi-partition test', async (t) => {
   let name: string;
 
   t.after(async () => {
-    console.log('afterAll: cleanup');
+    log('afterAll: cleanup');
     try {
       if (name) {
         await client.send(
           new DeleteTableCommand({ tableBucketARN, namespace, name })
         );
-        console.log('Table deleted:', namespace, name);
+        log('Table deleted:', namespace, name);
       }
       if (namespace) {
         await client.send(
           new DeleteNamespaceCommand({ tableBucketARN, namespace })
         );
-        console.log('Namespace deleted:', namespace);
+        log('Namespace deleted:', namespace);
       }
     } catch (error) {
       console.error('Cleanup failed:', error);
@@ -163,7 +164,7 @@ void test('multi-file multi-partition test', async (t) => {
     const namespace_result = await client.send(
       new CreateNamespaceCommand({ tableBucketARN, namespace: [namespace] })
     );
-    console.log('Namespace created:', namespace, namespace_result);
+    log('Namespace created:', namespace, namespace_result);
   });
 
   await t.test('add lake formation tag', async () => {
@@ -172,7 +173,7 @@ void test('multi-file multi-partition test', async (t) => {
       LFTags: [{ TagKey: 'AccessLevel', TagValues: ['Public'] }],
     });
     const response = await LFClient.send(command);
-    console.log('add tag response:', response);
+    log('add tag response:', response);
   });
 
   await t.test('create table', async () => {
@@ -196,7 +197,7 @@ void test('multi-file multi-partition test', async (t) => {
         },
       })
     );
-    console.log('Table created:', name, table_result);
+    log('Table created:', name, table_result);
   });
 
   await t.test('add partition spec', async () => {
@@ -220,7 +221,7 @@ void test('multi-file multi-partition test', async (t) => {
         },
       ],
     });
-    console.log('Partition spec added:', result);
+    log('Partition spec added:', result);
   });
 
   await t.test('add multiple files to multiple partitions', async () => {
@@ -285,24 +286,24 @@ void test('multi-file multi-partition test', async (t) => {
         },
       ],
     });
-    console.log('addDataFiles result for all partitions:', result);
+    log('addDataFiles result for all partitions:', result);
   });
 
   await t.test('verify total row count', async () => {
     const rowCount = await queryRowCount(namespace, name);
-    console.log('Total row count:', rowCount);
+    log('Total row count:', rowCount);
     assert.strictEqual(rowCount, 40, `Expected 40 total rows, got ${rowCount}`);
   });
 
   await t.test('verify app1 partition', async () => {
     const rowCount = await queryRowCount(namespace, name, "app_name = 'app1'");
-    console.log('App1 row count:', rowCount);
+    log('App1 row count:', rowCount);
     assert.strictEqual(rowCount, 20, `Expected 20 rows for app1, got ${rowCount}`);
   });
 
   await t.test('verify app2 partition', async () => {
     const rowCount = await queryRowCount(namespace, name, "app_name = 'app2'");
-    console.log('App2 row count:', rowCount);
+    log('App2 row count:', rowCount);
     assert.strictEqual(rowCount, 20, `Expected 20 rows for app2, got ${rowCount}`);
   });
 
@@ -312,7 +313,7 @@ void test('multi-file multi-partition test', async (t) => {
       name,
       "date(event_datetime) = date('2024-01-01')"
     );
-    console.log('2024-01-01 row count:', rowCount);
+    log('2024-01-01 row count:', rowCount);
     assert.strictEqual(rowCount, 20, `Expected 20 rows for 2024-01-01, got ${rowCount}`);
   });
 
@@ -322,7 +323,7 @@ void test('multi-file multi-partition test', async (t) => {
       name,
       "date(event_datetime) = date('2024-01-02')"
     );
-    console.log('2024-01-02 row count:', rowCount);
+    log('2024-01-02 row count:', rowCount);
     assert.strictEqual(rowCount, 20, `Expected 20 rows for 2024-01-02, got ${rowCount}`);
   });
 
@@ -336,7 +337,7 @@ void test('multi-file multi-partition test', async (t) => {
 
     for (const { where, expected } of combinations) {
       const rowCount = await queryRowCount(namespace, name, where);
-      console.log(`Row count for ${where}:`, rowCount);
+      log(`Row count for ${where}:`, rowCount);
       assert.strictEqual(rowCount, expected, `Expected ${expected} rows for ${where}, got ${rowCount}`);
     }
   });
@@ -409,26 +410,26 @@ void test('multi-file multi-partition test', async (t) => {
         },
       ],
     });
-    console.log('addDataFiles result for multiple lists:', result);
+    log('addDataFiles result for multiple lists:', result);
   });
 
   await t.test('verify total row count after second batch', async () => {
     const rowCount = await queryRowCount(namespace, name);
-    console.log('Total row count after second batch:', rowCount);
+    log('Total row count after second batch:', rowCount);
     assert.strictEqual(rowCount, 80, `Expected 80 total rows after second batch, got ${rowCount}`);
   });
 
   await t.test('verify new app partitions', async () => {
     const app3Count = await queryRowCount(namespace, name, "app_name = 'app3'");
     const app4Count = await queryRowCount(namespace, name, "app_name = 'app4'");
-    console.log('App3 row count:', app3Count);
-    console.log('App4 row count:', app4Count);
+    log('App3 row count:', app3Count);
+    log('App4 row count:', app4Count);
     assert.strictEqual(app3Count, 20, `Expected 20 rows for app3, got ${app3Count}`);
     assert.strictEqual(app4Count, 20, `Expected 20 rows for app4, got ${app4Count}`);
   });
 
   await t.test('final metadata check', async () => {
     const metadata = await getMetadata({ tableBucketARN, namespace, name });
-    console.log('Final metadata:', inspect(metadata, { depth: 99 }));
+    log('Final metadata:', inspect(metadata, { depth: 99 }));
   });
 });
