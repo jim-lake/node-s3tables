@@ -7,15 +7,15 @@ import {
   GetQueryResultsCommand,
 } from '@aws-sdk/client-athena';
 
-export async function queryRowCount(
+export async function queryRows<T = Record<string, unknown>>(
   namespace: string,
   name: string,
   whereClause?: string
-): Promise<number> {
+): Promise<T[]> {
   const bucketParts = config.tableBucketARN.split('/');
   const bucket = bucketParts[bucketParts.length - 1];
   assert(bucket, 'Could not extract bucket from tableBucketARN');
-  const sql = `SELECT COUNT(*) as row_count FROM ${name}${whereClause ? ` WHERE ${whereClause}` : ''}`;
+  const sql = `SELECT * FROM ${name}${whereClause ? ` WHERE ${whereClause}` : ''}`;
 
   const { QueryExecutionId } = await clients.athena.send(
     new StartQueryExecutionCommand({
@@ -44,11 +44,18 @@ export async function queryRowCount(
     const queryResults = await clients.athena.send(
       new GetQueryResultsCommand({ QueryExecutionId })
     );
-    const rowCount = parseInt(
-      queryResults.ResultSet?.Rows?.[1]?.Data?.[0]?.VarCharValue ?? '0',
-      10
-    );
-    return rowCount;
+
+    const rows = queryResults.ResultSet?.Rows ?? [];
+    if (rows.length === 0) return [];
+
+    const headers = rows[0].Data?.map((col) => col.VarCharValue ?? '') ?? [];
+    return rows.slice(1).map((row) => {
+      const obj: Record<string, any> = {};
+      row.Data?.forEach((col, i) => {
+        obj[headers[i]] = col.VarCharValue;
+      });
+      return obj as T;
+    });
   }
   assert.fail(`Athena query failed with status: ${status}`);
 }

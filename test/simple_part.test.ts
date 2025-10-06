@@ -4,7 +4,7 @@ import { strict as assert } from 'node:assert';
 import { inspect } from 'node:util';
 import { config } from './helpers/aws_clients';
 import { setupTable } from './helpers/table_lifecycle';
-import { queryRowCount } from './helpers/athena_helper';
+import { queryRows } from './helpers/athena_helper';
 import { createPartitionedParquetFile } from './helpers/parquet_helper';
 
 import { getMetadata, addPartitionSpec, addDataFiles } from '../src';
@@ -214,46 +214,50 @@ void test('multi-level partitioning test', async (t) => {
   });
 
   await t.test('query total row count', async () => {
-    const rowCount = await queryRowCount(namespace, name);
-    log('Total row count:', rowCount);
-    assert.strictEqual(rowCount, 40, `Expected 40 total rows, got ${rowCount}`);
+    const rows = await queryRows(namespace, name);
+    log('Total row count:', rows.length);
+    assert.strictEqual(
+      rows.length,
+      40,
+      `Expected 40 total rows, got ${rows.length}`
+    );
   });
 
   await t.test('query app1 partition', async () => {
-    const rowCount = await queryRowCount(namespace, name, "app_name = 'app1'");
-    log('App1 row count:', rowCount);
+    const rows = await queryRows(namespace, name, "app_name = 'app1'");
+    log('App1 row count:', rows.length);
     assert.strictEqual(
-      rowCount,
+      rows.length,
       20,
-      `Expected 20 rows for app1, got ${rowCount}`
+      `Expected 20 rows for app1, got ${rows.length}`
     );
   });
 
   await t.test('query 2024-01-01 partition', async () => {
-    const rowCount = await queryRowCount(
+    const rows = await queryRows(
       namespace,
       name,
       "date(event_datetime) = date('2024-01-01')"
     );
-    log('2024-01-01 row count:', rowCount);
+    log('2024-01-01 row count:', rows.length);
     assert.strictEqual(
-      rowCount,
+      rows.length,
       20,
-      `Expected 20 rows for 2024-01-01, got ${rowCount}`
+      `Expected 20 rows for 2024-01-01, got ${rows.length}`
     );
   });
 
   await t.test('query specific partition', async () => {
-    const rowCount = await queryRowCount(
+    const rows = await queryRows(
       namespace,
       name,
       "app_name = 'app1' AND date(event_datetime) = date('2024-01-01')"
     );
-    log('App1 2024-01-01 row count:', rowCount);
+    log('App1 2024-01-01 row count:', rows.length);
     assert.strictEqual(
-      rowCount,
+      rows.length,
       10,
-      `Expected 10 rows for app1/2024-01-01, got ${rowCount}`
+      `Expected 10 rows for app1/2024-01-01, got ${rows.length}`
     );
   });
 

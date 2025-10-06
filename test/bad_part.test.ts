@@ -3,10 +3,16 @@ import { log } from './helpers/log_helper';
 import { strict as assert } from 'node:assert';
 import { config } from './helpers/aws_clients';
 import { setupTable } from './helpers/table_lifecycle';
-import { queryRowCount } from './helpers/athena_helper';
+import { queryRows } from './helpers/athena_helper';
 import { createPartitionedParquetFile } from './helpers/parquet_helper';
 
 import { getMetadata, addPartitionSpec, addDataFiles } from '../src';
+
+interface TestRow {
+  app_name: string;
+  event_datetime: string;
+  detail: string;
+}
 
 void test('bad partition labeling test', async (t) => {
   const { namespace, name } = await setupTable(
@@ -88,60 +94,84 @@ void test('bad partition labeling test', async (t) => {
   });
 
   await t.test('query for app1 - should find 0 rows', async () => {
-    const rowCount = await queryRowCount(namespace, name, "app_name = 'app1'");
-    log('App1 row count (should be 0):', rowCount);
+    const rows = await queryRows<TestRow>(namespace, name, "app_name = 'app1'");
+    log('App1 rows (should be 0):', rows);
     assert.strictEqual(
-      rowCount,
+      rows.length,
       0,
-      `Expected 0 rows for app1 due to wrong labeling, got ${rowCount}`
+      `Expected 0 rows for app1 due to wrong labeling, got ${rows.length}`
     );
   });
 
   await t.test(
-    'query for app2 - should find 10 rows but wrong data',
+    'query for app2 - should find 10 rows with wrong partition metadata',
     async () => {
-      const rowCount = await queryRowCount(
+      const rows = await queryRows<TestRow>(
         namespace,
         name,
         "app_name = 'app2'"
       );
-      log('App2 row count (should be 10 but wrong data):', rowCount);
+      log('App2 rows (should be 10 with partition metadata app2):', rows);
       assert.strictEqual(
-        rowCount,
+        rows.length,
         10,
-        `Expected 10 rows for app2 partition, got ${rowCount}`
+        `Expected 10 rows for app2 partition, got ${rows.length}`
       );
+      // Verify the partition metadata shows app2 (even though file contains app1 data)
+      rows.forEach((row) => {
+        assert.strictEqual(
+          row.app_name,
+          'app2',
+          'Partition metadata should show app2'
+        );
+        // The detail field should still show the original app1 data
+        assert(
+          row.detail.includes('app1'),
+          'Detail should contain app1 from original data'
+        );
+      });
     }
   );
 
   await t.test('query for 2024-01-01 - should find 0 rows', async () => {
-    const rowCount = await queryRowCount(
+    const rows = await queryRows<TestRow>(
       namespace,
       name,
       "date(event_datetime) = date('2024-01-01')"
     );
-    log('2024-01-01 row count (should be 0):', rowCount);
+    log('2024-01-01 rows (should be 0):', rows);
     assert.strictEqual(
-      rowCount,
+      rows.length,
       0,
-      `Expected 0 rows for 2024-01-01 due to wrong labeling, got ${rowCount}`
+      `Expected 0 rows for 2024-01-01 due to wrong labeling, got ${rows.length}`
     );
   });
 
   await t.test(
-    'query for 2024-01-02 - should find 10 rows but wrong data',
+    'query for 2024-01-02 - should find 10 rows with wrong date metadata',
     async () => {
-      const rowCount = await queryRowCount(
+      const rows = await queryRows<TestRow>(
         namespace,
         name,
         "date(event_datetime) = date('2024-01-02')"
       );
-      log('2024-01-02 row count (should be 10 but wrong data):', rowCount);
+      log('2024-01-02 rows (should be 10 with wrong date metadata):', rows);
       assert.strictEqual(
-        rowCount,
+        rows.length,
         10,
-        `Expected 10 rows for 2024-01-02 partition, got ${rowCount}`
+        `Expected 10 rows for 2024-01-02 partition, got ${rows.length}`
       );
+      // The actual event_datetime should show 2024-01-01 (the real data)
+      rows.forEach((row) => {
+        const eventDate = new Date(row.event_datetime)
+          .toISOString()
+          .split('T')[0];
+        assert.strictEqual(
+          eventDate,
+          '2024-01-01',
+          'Actual data should contain 2024-01-01'
+        );
+      });
     }
   );
 });

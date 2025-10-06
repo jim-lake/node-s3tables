@@ -4,7 +4,7 @@ import { strict as assert } from 'node:assert';
 import { inspect } from 'node:util';
 import { config } from './helpers/aws_clients';
 import { setupTable } from './helpers/table_lifecycle';
-import { queryRowCount } from './helpers/athena_helper';
+import { queryRows } from './helpers/athena_helper';
 import { createSimpleParquetFile } from './helpers/parquet_helper';
 
 import { getMetadata, addDataFiles } from '../src';
@@ -52,12 +52,12 @@ void test('add multiple parquet files test', async (t) => {
     });
     log('addDataFiles result 1:', result);
 
-    const rowCount = await queryRowCount(namespace, name);
-    log('Row count after first file:', rowCount);
+    const rows = await queryRows(namespace, name);
+    log('Row count after first file:', rows.length);
     assert.strictEqual(
-      rowCount,
+      rows.length,
       10,
-      `Expected 10 rows after first file, got ${rowCount}`
+      `Expected 10 rows after first file, got ${rows.length}`
     );
   });
 
@@ -93,12 +93,12 @@ void test('add multiple parquet files test', async (t) => {
     });
     log('addDataFiles result 2:', result);
 
-    const rowCount = await queryRowCount(namespace, name);
-    log('Row count after second file:', rowCount);
+    const rows = await queryRows(namespace, name);
+    log('Row count after second file:', rows.length);
     assert.strictEqual(
-      rowCount,
+      rows.length,
       20,
-      `Expected 20 rows after second file, got ${rowCount}`
+      `Expected 20 rows after second file, got ${rows.length}`
     );
   });
 
@@ -134,12 +134,12 @@ void test('add multiple parquet files test', async (t) => {
     });
     log('addDataFiles result 3:', result);
 
-    const rowCount = await queryRowCount(namespace, name);
-    log('Row count after third file:', rowCount);
+    const rows = await queryRows(namespace, name);
+    log('Row count after third file:', rows.length);
     assert.strictEqual(
-      rowCount,
+      rows.length,
       30,
-      `Expected 30 rows after third file, got ${rowCount}`
+      `Expected 30 rows after third file, got ${rows.length}`
     );
   });
 
