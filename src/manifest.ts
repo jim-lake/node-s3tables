@@ -19,16 +19,16 @@ export interface AddFile {
   partitions: PartitionRecord;
   fileSize: bigint;
   recordCount: bigint;
-  columnSizes?: Record<string, bigint> | null;
-  valueCounts?: Record<string, bigint> | null;
-  nullValueCounts?: Record<string, bigint> | null;
-  nanValueCounts?: Record<string, bigint> | null;
-  lowerBounds?: Record<string, Buffer> | null;
-  upperBounds?: Record<string, Buffer> | null;
-  keyMetadata?: Buffer | null;
-  splitOffsets?: bigint[] | null;
-  equalityIds?: number[] | null;
-  sortOrderId?: number | null;
+  columnSizes?: Record<string, bigint> | null | undefined;
+  valueCounts?: Record<string, bigint> | null | undefined;
+  nullValueCounts?: Record<string, bigint> | null | undefined;
+  nanValueCounts?: Record<string, bigint> | null | undefined;
+  lowerBounds?: Record<string, Buffer> | null | undefined;
+  upperBounds?: Record<string, Buffer> | null | undefined;
+  keyMetadata?: Buffer | null | undefined;
+  splitOffsets?: bigint[] | null | undefined;
+  equalityIds?: number[] | null | undefined;
+  sortOrderId?: number | null | undefined;
 }
 export interface AddManifestParams {
   credentials?: AwsCredentialIdentity | undefined;
@@ -152,18 +152,20 @@ export async function addManifest(
 function _transformRecord<T>(
   schema: IcebergSchema,
   map: Record<string, T> | null | undefined
-): Record<number, T> | null {
-  let ret: Record<number, T> | null = null;
-  if (map) {
-    for (const field of schema.fields) {
-      const value = map[field.name];
-      if (value !== undefined) {
-        ret ??= {};
-        ret[field.id] = value;
-      }
+): { key: number; value: T }[] | null {
+  if (!map) {
+    return null;
+  }
+
+  const result: { key: number; value: T }[] = [];
+  for (const field of schema.fields) {
+    const value = map[field.name];
+    if (value !== undefined) {
+      // Keep BigInt values as BigInt for Avro long type
+      result.push({ key: field.id, value });
     }
   }
-  return ret;
+  return result.length > 0 ? result : null;
 }
 function _minBuffer(a: Buffer | null, b: Buffer | null): Buffer | null {
   if (!a && !b) {

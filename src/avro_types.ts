@@ -24,12 +24,12 @@ export interface ManifestFileRecord {
     partition: PartitionRecord | null;
     record_count: bigint;
     file_size_in_bytes: bigint;
-    column_sizes?: Record<number, bigint> | null;
-    value_counts?: Record<number, bigint> | null;
-    null_value_counts?: Record<number, bigint> | null;
-    nan_value_counts?: Record<number, bigint> | null;
-    lower_bounds?: Record<number, Buffer> | null;
-    upper_bounds?: Record<number, Buffer> | null;
+    column_sizes?: { key: number; value: bigint }[] | null;
+    value_counts?: { key: number; value: bigint }[] | null;
+    null_value_counts?: { key: number; value: bigint }[] | null;
+    nan_value_counts?: { key: number; value: bigint }[] | null;
+    lower_bounds?: { key: number; value: Buffer }[] | null;
+    upper_bounds?: { key: number; value: Buffer }[] | null;
     key_metadata?: Buffer | null;
     split_offsets?: bigint[] | null;
     equality_ids?: number[] | null;
