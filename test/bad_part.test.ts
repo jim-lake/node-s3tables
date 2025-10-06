@@ -74,8 +74,8 @@ void test('bad partition labeling test', async (t) => {
             {
               file: `s3://${tableBucket}/${key}`,
               partitions: {
-                app_name: 'app2',  // WRONG: file contains app1 data
-                event_datetime_day: '2024-01-02',  // WRONG: file contains 2024-01-01 data
+                app_name: 'app2', // WRONG: file contains app1 data
+                event_datetime_day: '2024-01-02', // WRONG: file contains 2024-01-01 data
               },
               recordCount: 10n,
               fileSize: BigInt(size),
@@ -97,15 +97,22 @@ void test('bad partition labeling test', async (t) => {
     );
   });
 
-  await t.test('query for app2 - should find 10 rows but wrong data', async () => {
-    const rowCount = await queryRowCount(namespace, name, "app_name = 'app2'");
-    log('App2 row count (should be 10 but wrong data):', rowCount);
-    assert.strictEqual(
-      rowCount,
-      10,
-      `Expected 10 rows for app2 partition, got ${rowCount}`
-    );
-  });
+  await t.test(
+    'query for app2 - should find 10 rows but wrong data',
+    async () => {
+      const rowCount = await queryRowCount(
+        namespace,
+        name,
+        "app_name = 'app2'"
+      );
+      log('App2 row count (should be 10 but wrong data):', rowCount);
+      assert.strictEqual(
+        rowCount,
+        10,
+        `Expected 10 rows for app2 partition, got ${rowCount}`
+      );
+    }
+  );
 
   await t.test('query for 2024-01-01 - should find 0 rows', async () => {
     const rowCount = await queryRowCount(
@@ -121,17 +128,20 @@ void test('bad partition labeling test', async (t) => {
     );
   });
 
-  await t.test('query for 2024-01-02 - should find 10 rows but wrong data', async () => {
-    const rowCount = await queryRowCount(
-      namespace,
-      name,
-      "date(event_datetime) = date('2024-01-02')"
-    );
-    log('2024-01-02 row count (should be 10 but wrong data):', rowCount);
-    assert.strictEqual(
-      rowCount,
-      10,
-      `Expected 10 rows for 2024-01-02 partition, got ${rowCount}`
-    );
-  });
+  await t.test(
+    'query for 2024-01-02 - should find 10 rows but wrong data',
+    async () => {
+      const rowCount = await queryRowCount(
+        namespace,
+        name,
+        "date(event_datetime) = date('2024-01-02')"
+      );
+      log('2024-01-02 row count (should be 10 but wrong data):', rowCount);
+      assert.strictEqual(
+        rowCount,
+        10,
+        `Expected 10 rows for 2024-01-02 partition, got ${rowCount}`
+      );
+    }
+  );
 });

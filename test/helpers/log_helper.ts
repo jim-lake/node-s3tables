@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import { basename } from 'node:path';
 import type { FailedTestContext } from './test_helper';
 
+const DEBUG = Boolean(process.env['DEBUG']);
+
 const g_logs: unknown[][] = [];
 
 test.beforeEach(() => {
@@ -22,5 +24,9 @@ test.afterEach((t) => {
   g_logs.splice(0);
 });
 export function log(...args: unknown[]) {
-  g_logs.push(args);
+  if (DEBUG) {
+    console.log(...args);
+  } else {
+    g_logs.push(args);
+  }
 }
