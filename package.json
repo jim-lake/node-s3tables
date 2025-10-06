@@ -13,6 +13,7 @@
     "lint": "eslint src test",
     "pretty": "prettier -u --write \"**/*\" --log-level warn",
     "test": "dotenv -- tsx --test test/*.test.ts",
+    "test:single": "dotenv -- tsx --test",
     "test:cover": "dotenv -- tsx --test --experimental-test-coverage test/*.test.ts"
   },
   "repository": {
