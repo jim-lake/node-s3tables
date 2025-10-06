@@ -338,14 +338,14 @@ void test('multi-file multi-partition test', async (t) => {
     log('App3 row count:', app3Count);
     log('App4 row count:', app4Count);
     assert.strictEqual(
-      app3Count,
+      app3Count.length,
       20,
-      `Expected 20 rows for app3, got ${app3Count}`
+      `Expected 20 rows for app3, got ${app3Count.length}`
     );
     assert.strictEqual(
-      app4Count,
+      app4Count.length,
       20,
-      `Expected 20 rows for app4, got ${app4Count}`
+      `Expected 20 rows for app4, got ${app4Count.length}`
     );
   });
 

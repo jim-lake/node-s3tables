@@ -340,9 +340,9 @@ void test('add parquet files with full stats test', async (t) => {
     const finalRowCount = await queryRows(namespace, name);
     log('Final row count:', finalRowCount);
     assert.strictEqual(
-      finalRowCount,
+      finalRowCount.length,
       20,
-      `Expected 20 total rows, got ${finalRowCount}`
+      `Expected 20 total rows, got ${finalRowCount.length}`
     );
   });
 });

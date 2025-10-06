@@ -46,13 +46,23 @@ export async function queryRows<T = Record<string, unknown>>(
     );
 
     const rows = queryResults.ResultSet?.Rows ?? [];
-    if (rows.length === 0) return [];
+    if (rows.length === 0) {
+      return [];
+    }
 
-    const headers = rows[0].Data?.map((col) => col.VarCharValue ?? '') ?? [];
+    const firstRow = rows[0];
+    if (!firstRow?.Data) {
+      return [];
+    }
+
+    const headers = firstRow.Data.map((col) => col.VarCharValue ?? '');
     return rows.slice(1).map((row) => {
-      const obj: Record<string, any> = {};
+      const obj: Record<string, unknown> = {};
       row.Data?.forEach((col, i) => {
-        obj[headers[i]] = col.VarCharValue;
+        const header = headers[i];
+        if (header) {
+          obj[header] = col.VarCharValue;
+        }
       });
       return obj as T;
     });
