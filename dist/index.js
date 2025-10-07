@@ -1022,6 +1022,13 @@ function parse(text) {
     return LosslessJson__namespace.parse(text, null, customNumberParser);
 }
 
+class HttpError extends Error {
+    status;
+    constructor(status, message) {
+        super(message);
+        this.status = status;
+    }
+}
 async function icebergRequest(params) {
     const region = params.tableBucketARN.split(':')[3];
     if (!region) {
@@ -1062,8 +1069,17 @@ async function icebergRequest(params) {
     const res = await fetch(url, fetch_opts);
     const text = await res.text();
     if (!res.ok) {
-        throw new Error(`request failed: ${res.status} ${res.statusText} ${text}`);
+        if (res.status) {
+            throw new HttpError(res.status, `request failed: ${res.statusText} ${text}`);
+        }
+        throw new Error(`request failed: ${res.statusText} ${text}`);
     }
+    const ret = res.headers.get('content-type') === 'application/json'
+        ? _parse(text)
+        : text;
+    return ret;
+}
+function _parse(text) {
     try {
         return parse(text);
     }
@@ -1145,24 +1161,19 @@ async function addPartitionSpec(params) {
     });
 }
 
+const DEFAULT_RETRY_COUNT = 5;
 async function addDataFiles(params) {
     const { credentials } = params;
+    const retry_max = params.retryCount ?? DEFAULT_RETRY_COUNT;
     const region = params.tableBucketARN.split(':')[3];
     if (!region) {
         throw new Error('bad tableBucketARN');
     }
     const snapshot_id = _randomBigInt64();
-    const metadata = await getMetadata(params);
-    const parent_snapshot_id = metadata['current-snapshot-id'];
+    let metadata = await getMetadata(params);
     const bucket = metadata.location.split('/').slice(-1)[0];
-    const snapshot = parent_snapshot_id === -1
-        ? null
-        : metadata.snapshots.find((s) => s['snapshot-id'] === parent_snapshot_id);
     if (!bucket) {
         throw new Error('bad manifest location');
-    }
-    if (parent_snapshot_id !== -1 && !snapshot) {
-        throw new Error('no old snapshot');
     }
     const sequence_number = BigInt(metadata.snapshots.reduce((memo, s) => s['sequence-number'] > memo ? s['sequence-number'] : memo, 0)) + 1n;
     let added_files = 0;
@@ -1186,88 +1197,111 @@ async function addDataFiles(params) {
         };
         return addManifest(opts);
     }));
-    const manifest_list_key = `metadata/${node_crypto.randomUUID()}.avro`;
-    const manifest_list_url = `s3://${bucket}/${manifest_list_key}`;
-    if (snapshot) {
-        const { key: old_list_key } = parseS3Url(snapshot['manifest-list']);
-        if (!old_list_key) {
-            throw new Error('snapshot invalid');
+    for (let try_count = 0;; try_count++) {
+        const parent_snapshot_id = BigInt(metadata['current-snapshot-id'] ?? -1n);
+        const snapshot = metadata.snapshots.find((s) => s['snapshot-id'] === parent_snapshot_id) ??
+            null;
+        if (parent_snapshot_id > 0n && !snapshot) {
+            throw new Error('no old snapshot');
         }
-        await updateManifestList({
-            credentials,
-            region,
-            bucket,
-            key: old_list_key,
-            outKey: manifest_list_key,
-            metadata: {
-                'sequence-number': String(sequence_number),
-                'snapshot-id': String(snapshot_id),
-                'parent-snapshot-id': String(parent_snapshot_id),
-            },
-            prepend: records,
-        });
-    }
-    else {
-        const manifest_list_buf = await avroToBuffer({
-            type: ManifestListType,
-            metadata: {
-                'sequence-number': String(sequence_number),
-                'snapshot-id': String(snapshot_id),
-                'parent-snapshot-id': String(parent_snapshot_id),
-            },
-            records,
-        });
-        await writeS3File({
-            credentials,
-            region,
-            bucket,
-            key: manifest_list_key,
-            body: manifest_list_buf,
-        });
-    }
-    const commit_result = await icebergRequest({
-        credentials: params.credentials,
-        tableBucketARN: params.tableBucketARN,
-        method: 'POST',
-        suffix: `/namespaces/${params.namespace}/tables/${params.name}`,
-        body: {
-            requirements: parent_snapshot_id === -1
-                ? []
-                : [
-                    {
-                        type: 'assert-ref-snapshot-id',
-                        ref: 'main',
-                        'snapshot-id': parent_snapshot_id,
-                    },
-                ],
-            updates: [
-                {
-                    action: 'add-snapshot',
-                    snapshot: {
-                        'sequence-number': sequence_number,
-                        'snapshot-id': snapshot_id,
-                        'parent-snapshot-id': parent_snapshot_id,
-                        'timestamp-ms': Date.now(),
-                        summary: {
-                            operation: 'append',
-                            'added-data-files': String(added_files),
-                            'added-records': String(added_records),
-                            'added-files-size': String(added_size),
+        const manifest_list_key = `metadata/${node_crypto.randomUUID()}.avro`;
+        const manifest_list_url = `s3://${bucket}/${manifest_list_key}`;
+        if (snapshot) {
+            const { key: old_list_key } = parseS3Url(snapshot['manifest-list']);
+            if (!old_list_key) {
+                throw new Error('snapshot invalid');
+            }
+            await updateManifestList({
+                credentials,
+                region,
+                bucket,
+                key: old_list_key,
+                outKey: manifest_list_key,
+                metadata: {
+                    'sequence-number': String(sequence_number),
+                    'snapshot-id': String(snapshot_id),
+                    'parent-snapshot-id': String(parent_snapshot_id),
+                },
+                prepend: records,
+            });
+        }
+        else {
+            const manifest_list_buf = await avroToBuffer({
+                type: ManifestListType,
+                metadata: {
+                    'sequence-number': String(sequence_number),
+                    'snapshot-id': String(snapshot_id),
+                    'parent-snapshot-id': 'null',
+                },
+                records,
+            });
+            await writeS3File({
+                credentials,
+                region,
+                bucket,
+                key: manifest_list_key,
+                body: manifest_list_buf,
+            });
+        }
+        try {
+            const result = await icebergRequest({
+                credentials: params.credentials,
+                tableBucketARN: params.tableBucketARN,
+                method: 'POST',
+                suffix: `/namespaces/${params.namespace}/tables/${params.name}`,
+                body: {
+                    requirements: snapshot
+                        ? [
+                            {
+                                type: 'assert-ref-snapshot-id',
+                                ref: 'main',
+                                'snapshot-id': parent_snapshot_id,
+                            },
+                        ]
+                        : [],
+                    updates: [
+                        {
+                            action: 'add-snapshot',
+                            snapshot: {
+                                'sequence-number': sequence_number,
+                                'snapshot-id': snapshot_id,
+                                'parent-snapshot-id': parent_snapshot_id,
+                                'timestamp-ms': Date.now(),
+                                summary: {
+                                    operation: 'append',
+                                    'added-data-files': String(added_files),
+                                    'added-records': String(added_records),
+                                    'added-files-size': String(added_size),
+                                },
+                                'manifest-list': manifest_list_url,
+                                'schema-id': metadata['current-schema-id'],
+                            },
                         },
-                        'manifest-list': manifest_list_url,
-                        'schema-id': metadata['current-schema-id'],
-                    },
+                        {
+                            action: 'set-snapshot-ref',
+                            'snapshot-id': snapshot_id,
+                            type: 'branch',
+                            'ref-name': 'main',
+                        },
+                    ],
                 },
-                {
-                    action: 'set-snapshot-ref',
-                    'snapshot-id': snapshot_id,
-                    type: 'branch',
-                    'ref-name': 'main',
-                },
-            ],
-        },
-    });
-    return commit_result;
+            });
+            return {
+                result,
+                retriesNeeded: try_count,
+                parentSnapshotId: parent_snapshot_id,
+                snapshotId: snapshot_id,
+                sequenceNumber: sequence_number,
+            };
+        }
+        catch (e) {
+            if (e instanceof HttpError && e.status === 409 && try_count < retry_max) ;
+            else {
+                throw e;
+            }
+        }
+        metadata = await getMetadata(params);
+    }
 }
 async function setCurrentCommit(params) {
     const commit_result = await icebergRequest({

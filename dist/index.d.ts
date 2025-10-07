@@ -165,8 +165,16 @@ interface AddDataFilesParams {
     namespace: string;
     name: string;
     lists: AddFileList[];
+    retryCount?: number;
 }
-declare function addDataFiles(params: AddDataFilesParams): Promise<JSONObject>;
+interface AddDataResult {
+    result: JSONObject;
+    retriesNeeded: number;
+    parentSnapshotId: bigint;
+    snapshotId: bigint;
+    sequenceNumber: bigint;
+}
+declare function addDataFiles(params: AddDataFilesParams): Promise<AddDataResult>;
 interface SetCurrentCommitParams {
     credentials?: AwsCredentialIdentity;
     tableBucketARN: string;
@@ -186,4 +194,4 @@ declare const _default: {
 };
 
 export { addDataFiles, addManifest, addPartitionSpec, addSchema, _default as default, getMetadata, setCurrentCommit };
-export type { AddDataFilesParams, AddFile, AddFileList, AddManifestParams, AddPartitionSpecParams, AddSchemaParams, GetMetadataParams, IcebergComplexType, IcebergMetadata, IcebergPartitionField, IcebergPartitionSpec, IcebergPrimitiveType, IcebergSchema, IcebergSchemaField, IcebergSnapshot, IcebergTransform, IcebergType, SetCurrentCommitParams, TableLocation };
+export type { AddDataFilesParams, AddDataResult, AddFile, AddFileList, AddManifestParams, AddPartitionSpecParams, AddSchemaParams, GetMetadataParams, IcebergComplexType, IcebergMetadata, IcebergPartitionField, IcebergPartitionSpec, IcebergPrimitiveType, IcebergSchema, IcebergSchemaField, IcebergSnapshot, IcebergTransform, IcebergType, SetCurrentCommitParams, TableLocation };

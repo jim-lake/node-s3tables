@@ -7,6 +7,7 @@ import { icebergRequest, HttpError } from './request';
 import { parseS3Url, writeS3File, updateManifestList } from './s3_tools';
 
 import type { AwsCredentialIdentity } from '@aws-sdk/types';
+import type { JSONObject } from './json';
 import type { AddFile } from './manifest';
 
 export default { addDataFiles };
@@ -26,7 +27,16 @@ export interface AddDataFilesParams {
   lists: AddFileList[];
   retryCount?: number;
 }
-export async function addDataFiles(params: AddDataFilesParams) {
+export interface AddDataResult {
+  result: JSONObject;
+  retriesNeeded: number;
+  parentSnapshotId: bigint;
+  snapshotId: bigint;
+  sequenceNumber: bigint;
+}
+export async function addDataFiles(
+  params: AddDataFilesParams
+): Promise<AddDataResult> {
   const { credentials } = params;
   const retry_max = params.retryCount ?? DEFAULT_RETRY_COUNT;
   const region = params.tableBucketARN.split(':')[3];
@@ -73,11 +83,11 @@ export async function addDataFiles(params: AddDataFilesParams) {
   );
 
   for (let try_count = 0; ; try_count++) {
-    const parent_snapshot_id = metadata['current-snapshot-id'];
+    const parent_snapshot_id = BigInt(metadata['current-snapshot-id'] ?? -1n);
     const snapshot =
       metadata.snapshots.find((s) => s['snapshot-id'] === parent_snapshot_id) ??
       null;
-    if (parent_snapshot_id !== -1 && !snapshot) {
+    if (parent_snapshot_id > 0n && !snapshot) {
       throw new Error('no old snapshot');
     }
     const manifest_list_key = `metadata/${randomUUID()}.avro`;
@@ -106,7 +116,7 @@ export async function addDataFiles(params: AddDataFilesParams) {
         metadata: {
           'sequence-number': String(sequence_number),
           'snapshot-id': String(snapshot_id),
-          'parent-snapshot-id': String(parent_snapshot_id),
+          'parent-snapshot-id': 'null',
         },
         records,
       });
@@ -119,22 +129,21 @@ export async function addDataFiles(params: AddDataFilesParams) {
       });
     }
     try {
-      return await icebergRequest({
+      const result = await icebergRequest({
         credentials: params.credentials,
         tableBucketARN: params.tableBucketARN,
         method: 'POST',
         suffix: `/namespaces/${params.namespace}/tables/${params.name}`,
         body: {
-          requirements:
-            parent_snapshot_id === -1
-              ? []
-              : [
-                  {
-                    type: 'assert-ref-snapshot-id',
-                    ref: 'main',
-                    'snapshot-id': parent_snapshot_id,
-                  },
-                ],
+          requirements: snapshot
+            ? [
+                {
+                  type: 'assert-ref-snapshot-id',
+                  ref: 'main',
+                  'snapshot-id': parent_snapshot_id,
+                },
+              ]
+            : [],
           updates: [
             {
               action: 'add-snapshot',
@@ -162,6 +171,13 @@ export async function addDataFiles(params: AddDataFilesParams) {
           ],
         },
       });
+      return {
+        result,
+        retriesNeeded: try_count,
+        parentSnapshotId: parent_snapshot_id,
+        snapshotId: snapshot_id,
+        sequenceNumber: sequence_number,
+      };
     } catch (e) {
       if (e instanceof HttpError && e.status === 409 && try_count < retry_max) {
         // retry case
