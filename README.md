@@ -310,78 +310,6 @@ Supported partition transforms:
 - `'bucket[N]'` - Hash bucket with N buckets
 - `'truncate[N]'` - Truncate strings to N characters
 
-## Testing
-
-### Prerequisites
-
-The tests require AWS credentials and S3 Tables resources. Set up the following environment variables in a `.env` file:
-
-```bash
-TABLE_BUCKET_ARN=arn:aws:s3tables:us-west-2:123456789012:bucket/your-test-bucket
-CATALOG_ID=123456789012:s3tablescatalog/your-test-bucket
-OUTPUT_BUCKET=your-output-bucket
-```
-
-### AWS Service Calls and Permissions
-
-The tests make calls to multiple AWS services and require the following permissions:
-
-**S3 Tables:**
-
-- `s3tables:CreateNamespace`
-- `s3tables:DeleteNamespace`
-- `s3tables:CreateTable`
-- `s3tables:DeleteTable`
-- `s3tables:GetTableMetadata`
-- `s3tables:UpdateTableMetadata`
-
-**S3:**
-
-- `s3:PutObject` (for uploading test Parquet files)
-- `s3:GetObject` (for reading manifest files)
-
-**Lake Formation:**
-
-- `lakeformation:AddLFTagsToResource` (adds `AccessLevel: Public` tag to namespaces)
-
-**Athena:**
-
-- `athena:StartQueryExecution`
-- `athena:GetQueryExecution`
-- `athena:GetQueryResults`
-
-**Lake Formation Setup:**
-The tests expect a Lake Formation tag with key `AccessLevel` and value `Public` to exist in your account. This tag is automatically applied to test namespaces to allow Athena query permissions.
-
-### Test Dependencies
-
-The test suite uses additional dependencies for creating test data:
-
-- `@aws-sdk/client-athena` - For running Athena queries in tests
-- `@aws-sdk/client-lakeformation` - For Lake Formation permissions
-- `parquetjs` - For creating test Parquet files
-- `dotenv-cli` - For loading environment variables
-
-### Running Tests
-
-Run the test suite:
-
-```bash
-npm test
-```
-
-Run tests with coverage:
-
-```bash
-npm run test:cover
-```
-
-Run a single test file:
-
-```bash
-npm run test:single test/create.test.ts
-```
-
 ## AWS API Calls and Required Permissions
 
 The library makes calls to multiple AWS services and requires specific IAM permissions:
@@ -449,6 +377,78 @@ The library uses the AWS SDK for authentication. Configure credentials using:
 - AWS credentials file (`~/.aws/credentials`)
 - IAM roles (when running on EC2/Lambda)
 - Or pass credentials directly to functions
+
+## Testing
+
+### Prerequisites
+
+The tests require AWS credentials and S3 Tables resources. Set up the following environment variables in a `.env` file:
+
+```bash
+TABLE_BUCKET_ARN=arn:aws:s3tables:us-west-2:123456789012:bucket/your-test-bucket
+CATALOG_ID=123456789012:s3tablescatalog/your-test-bucket
+OUTPUT_BUCKET=your-output-bucket
+```
+
+### AWS Service Calls and Permissions
+
+The tests make calls to multiple AWS services and require the following permissions:
+
+**S3 Tables:**
+
+- `s3tables:CreateNamespace`
+- `s3tables:DeleteNamespace`
+- `s3tables:CreateTable`
+- `s3tables:DeleteTable`
+- `s3tables:GetTableMetadata`
+- `s3tables:UpdateTableMetadata`
+
+**S3:**
+
+- `s3:PutObject` (for uploading test Parquet files)
+- `s3:GetObject` (for reading manifest files)
+
+**Lake Formation:**
+
+- `lakeformation:AddLFTagsToResource` (adds `AccessLevel: Public` tag to namespaces)
+
+**Athena:**
+
+- `athena:StartQueryExecution`
+- `athena:GetQueryExecution`
+- `athena:GetQueryResults`
+
+**Lake Formation Setup:**
+The tests expect a Lake Formation tag with key `AccessLevel` and value `Public` to exist in your account. This tag is automatically applied to test namespaces to allow Athena query permissions.
+
+### Test Dependencies
+
+The test suite uses additional dependencies for creating test data:
+
+- `@aws-sdk/client-athena` - For running Athena queries in tests
+- `@aws-sdk/client-lakeformation` - For Lake Formation permissions
+- `parquetjs` - For creating test Parquet files
+- `dotenv-cli` - For loading environment variables
+
+### Running Tests
+
+Run the test suite:
+
+```bash
+npm run test
+```
+
+Run tests with coverage:
+
+```bash
+npm run test:cover
+```
+
+Run a single test file:
+
+```bash
+npm run test:single test/create.test.ts
+```
 
 ## License
 
