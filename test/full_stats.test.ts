@@ -57,38 +57,40 @@ async function createParquetFileWithStats(
 
   for (const rg of envelopeWriter.rowGroups) {
     for (const column of rg.columns) {
-      const fieldName = column.meta_data.path_in_schema[0];
-      if (!fieldName) {
-        throw new Error('Missing field name in parquet column metadata');
-      }
-
-      columnSizes[fieldName] =
-        (columnSizes[fieldName] ?? 0n) +
-        BigInt(column.meta_data.total_compressed_size);
-      valueCounts[fieldName] =
-        (valueCounts[fieldName] ?? 0n) +
-        BigInt(column.meta_data.statistics.distinct_count);
-      nullValueCounts[fieldName] =
-        (nullValueCounts[fieldName] ?? 0n) +
-        BigInt(column.meta_data.statistics.null_count);
-
-      const minValue = column.meta_data.statistics.min_value;
-      const maxValue = column.meta_data.statistics.max_value;
-
-      // Update lower bounds
-      const shouldUpdateLower =
-        !lowerBounds[fieldName] ||
-        Buffer.compare(minValue, lowerBounds[fieldName]) < 0;
-      if (shouldUpdateLower) {
-        lowerBounds[fieldName] = minValue;
-      }
-
-      // Update upper bounds
-      const shouldUpdateUpper =
-        !upperBounds[fieldName] ||
-        Buffer.compare(maxValue, upperBounds[fieldName]) > 0;
-      if (shouldUpdateUpper) {
-        upperBounds[fieldName] = maxValue;
+      const fieldName = column.meta_data?.path_in_schema?.[0];
+      if (fieldName && column.meta_data) {
+        if (column.meta_data.total_compressed_size !== undefined) {
+          columnSizes[fieldName] =
+            (columnSizes[fieldName] ?? 0n) +
+            BigInt(column.meta_data.total_compressed_size);
+        }
+        if (column.meta_data.num_values !== undefined) {
+          valueCounts[fieldName] =
+            (valueCounts[fieldName] ?? 0n) +
+            BigInt(column.meta_data.num_values);
+        }
+        if (column.meta_data.statistics) {
+          if (column.meta_data.statistics.null_count !== undefined) {
+            nullValueCounts[fieldName] =
+              (nullValueCounts[fieldName] ?? 0n) +
+              BigInt(column.meta_data.statistics.null_count);
+          }
+          const { min_value, max_value } = column.meta_data.statistics;
+          if (
+            min_value &&
+            (!lowerBounds[fieldName] ||
+              Buffer.compare(min_value, lowerBounds[fieldName]) < 0)
+          ) {
+            lowerBounds[fieldName] = min_value;
+          }
+          if (
+            max_value &&
+            (!upperBounds[fieldName] ||
+              Buffer.compare(max_value, upperBounds[fieldName]) > 0)
+          ) {
+            upperBounds[fieldName] = max_value;
+          }
+        }
       }
     }
   }
@@ -155,10 +157,7 @@ void test('add parquet files with full stats test', async (t) => {
     );
 
     log('Value counts:', stats.valueCounts);
-    assert(
-      stats.valueCounts['app'] === 1n,
-      'app value count should be 1 (distinct)'
-    );
+    assert(stats.valueCounts['app'] === 10n, 'app value count should be 10');
     assert(
       stats.valueCounts['event_datetime'] === 10n,
       'event_datetime value count should be 10'
@@ -257,10 +256,7 @@ void test('add parquet files with full stats test', async (t) => {
       );
 
       log('Second file value counts:', stats.valueCounts);
-      assert(
-        stats.valueCounts['app'] === 1n,
-        'app value count should be 1 (distinct)'
-      );
+      assert(stats.valueCounts['app'] === 10n, 'app value count should be 10');
       assert(
         stats.valueCounts['event_datetime'] === 10n,
         'event_datetime value count should be 10'

@@ -6,14 +6,15 @@ declare module 'parquetjs' {
   }
 
   interface ParquetColumnMetadata {
-    meta_data: {
-      path_in_schema: string[];
-      total_compressed_size: number;
-      statistics: {
-        distinct_count: number;
-        null_count: number;
-        min_value: Buffer;
-        max_value: Buffer;
+    meta_data?: {
+      path_in_schema?: string[];
+      total_compressed_size?: number;
+      num_values?: number;
+      statistics?: {
+        distinct_count?: number;
+        null_count?: number;
+        min_value?: Buffer;
+        max_value?: Buffer;
       };
     };
   }

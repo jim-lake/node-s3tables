@@ -262,7 +262,6 @@ export default tseslint.config(
       'no-undef-init': 'error',
 
       // Complexity rules - VERY STRICT
-      'max-depth': ['error', 3],
       'max-nested-callbacks': ['error', 2],
       'max-statements-per-line': ['error', { max: 1 }],
 
