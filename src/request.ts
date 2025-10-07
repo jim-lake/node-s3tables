@@ -10,6 +10,13 @@ import type { AwsCredentialIdentity } from '@aws-sdk/types';
 
 export default { icebergRequest };
 
+export class HttpError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
 interface GetParams {
   credentials?: AwsCredentialIdentity | undefined;
   tableBucketARN: string;
@@ -61,11 +68,24 @@ export async function icebergRequest<T = JSONObject>(
   const res = await fetch(url, fetch_opts);
   const text = await res.text();
   if (!res.ok) {
-    throw new Error(`request failed: ${res.status} ${res.statusText} ${text}`);
+    if (res.status) {
+      throw new HttpError(
+        res.status,
+        `request failed: ${res.statusText} ${text}`
+      );
+    }
+    throw new Error(`request failed: ${res.statusText} ${text}`);
   }
+  const ret =
+    res.headers.get('content-type') === 'application/json'
+      ? _parse(text)
+      : text;
+  return ret as T;
+}
+function _parse(text: string) {
   try {
-    return parse(text) as T;
+    return parse(text);
   } catch {
-    return text as T;
+    return text;
   }
 }

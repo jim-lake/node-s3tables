@@ -12,6 +12,11 @@ import { clients } from './helpers/aws_clients';
 
 import { getMetadata, addSchema, addDataFiles } from '../src';
 
+const schema = new ParquetSchema({
+  app: { type: 'UTF8' },
+  event_datetime: { type: 'TIMESTAMP_MILLIS' },
+});
+
 void test('create s3tables test', async (t) => {
   const { namespace, name, tableArn } = await setupTable(
     t,
@@ -61,11 +66,6 @@ void test('create s3tables test', async (t) => {
     );
     const s3Key = `data/app=test-app/data-${Date.now()}.parquet`;
 
-    const schema = new ParquetSchema({
-      app: { type: 'UTF8' },
-      event_datetime: { type: 'TIMESTAMP_MILLIS' },
-    });
-
     const stream = new PassThrough();
     const chunks: Buffer[] = [];
     stream.on('data', (chunk: Buffer) => chunks.push(chunk));
@@ -103,6 +103,58 @@ void test('create s3tables test', async (t) => {
       ],
     });
     log('addDataFiles result:', result);
+  });
+  await t.test('create second parquet file and add to table', async () => {
+    const metadata = await getMetadata({
+      tableBucketARN: config.tableBucketARN,
+      namespace,
+      name,
+    });
+    const bucketParts = metadata.location.split('/');
+    const tableBucket = bucketParts[bucketParts.length - 1];
+    assert(
+      tableBucket,
+      'Could not extract table bucket from metadata location'
+    );
+    const s3Key = `data/app=test-app2/data-${Date.now()}.parquet`;
+
+    const stream = new PassThrough();
+    const chunks: Buffer[] = [];
+    stream.on('data', (chunk: Buffer) => chunks.push(chunk));
+
+    const writer = await ParquetWriter.openStream(schema, stream);
+    await writer.appendRow({ app: 'test-app2', event_datetime: new Date() });
+    await writer.close();
+
+    const fileBuffer = Buffer.concat(chunks);
+
+    await clients.s3.send(
+      new PutObjectCommand({
+        Bucket: tableBucket,
+        Key: s3Key,
+        Body: fileBuffer,
+      })
+    );
+    const result = await addDataFiles({
+      tableBucketARN: config.tableBucketARN,
+      namespace,
+      name,
+      lists: [
+        {
+          specId: 0,
+          schemaId: 1,
+          files: [
+            {
+              file: `s3://${tableBucket}/${s3Key}`,
+              partitions: { app: 'test-app2' },
+              recordCount: 1n,
+              fileSize: BigInt(fileBuffer.length),
+            },
+          ],
+        },
+      ],
+    });
+    log('addDataFiles second result:', result);
   });
 
   await t.test('get metadata after add', async () => {
