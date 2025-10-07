@@ -1,7 +1,9 @@
-import { test } from './helpers/test_helper';
-import { log } from './helpers/log_helper';
 import { strict as assert } from 'node:assert';
 import { PassThrough } from 'node:stream';
+import { setTimeout } from 'node:timers/promises';
+
+import { test } from './helpers/test_helper';
+import { log } from './helpers/log_helper';
 import { config } from './helpers/aws_clients';
 import { setupTable } from './helpers/table_lifecycle';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
@@ -9,6 +11,8 @@ import { ParquetWriter, ParquetSchema } from 'parquetjs';
 import { clients } from './helpers/aws_clients';
 
 import { getMetadata, addSchema, addDataFiles } from '../src';
+
+import type { AddDataFilesResult } from '../src';
 
 const schema = new ParquetSchema({
   id: { type: 'INT32' },
@@ -36,15 +40,14 @@ void test('conflict test', async (t) => {
     });
   });
 
-  // Helper to create a data file
-  const createDataFile = async (id: number, nameValue: string) => {
+  async function createDataFile(id: number, nameValue: string) {
     const metadata = await getMetadata({
       tableBucketARN: config.tableBucketARN,
       namespace,
       name,
     });
     const bucketParts = metadata.location.split('/');
-    const tableBucket = bucketParts[bucketParts.length - 1];
+    const tableBucket = bucketParts[bucketParts.length - 1] ?? '';
     const s3Key = `data/file-${id}-${Date.now()}.parquet`;
 
     const stream = new PassThrough();
@@ -71,172 +74,85 @@ void test('conflict test', async (t) => {
       recordCount: 1n,
       fileSize: BigInt(fileBuffer.length),
     };
-  };
+  }
 
   await t.test('first commit', async () => {
     const file = await createDataFile(1, 'first');
-    
+
     const result = await addDataFiles({
       tableBucketARN: config.tableBucketARN,
       namespace,
       name,
-      lists: [
-        {
-          specId: 0,
-          schemaId: 1,
-          files: [file],
-        },
-      ],
+      lists: [{ specId: 0, schemaId: 1, files: [file] }],
     });
-    
+
     log('First commit result:', result);
     assert(result.retriesNeeded === 0, 'First commit should not need retries');
   });
 
   await t.test('second commit', async () => {
     const file = await createDataFile(2, 'second');
-    
+
     const result = await addDataFiles({
       tableBucketARN: config.tableBucketARN,
       namespace,
       name,
-      lists: [
-        {
-          specId: 0,
-          schemaId: 1,
-          files: [file],
-        },
-      ],
+      lists: [{ specId: 0, schemaId: 1, files: [file] }],
     });
-    
+
     log('Second commit result:', result);
     assert(result.retriesNeeded === 0, 'Second commit should not need retries');
   });
 
-  await t.test('third commit', async () => {
-    const file = await createDataFile(3, 'third');
-    
-    const result = await addDataFiles({
-      tableBucketARN: config.tableBucketARN,
-      namespace,
-      name,
-      lists: [
-        {
-          specId: 0,
-          schemaId: 1,
-          files: [file],
-        },
-      ],
-    });
-    
-    log('Third commit result:', result);
-    assert(result.retriesNeeded === 0, 'Third commit should not need retries');
-  });
-
-  await t.test('force conflict with mock', async () => {
+  await t.test('real parallel commits', async () => {
     const originalFetch = globalThis.fetch;
-    let callCount = 0;
-    
-    globalThis.fetch = async (url: string | URL | Request, init?: RequestInit) => {
-      if (init?.method === 'POST' && typeof url === 'string' && url.includes('/namespaces/')) {
-        callCount++;
-        // Force first POST to return 409 conflict
-        if (callCount === 1) {
-          return new Response(
-            JSON.stringify({
-              error: {
-                code: 409,
-                message: 'Conflict detected',
-                type: 'conflict'
-              }
-            }),
-            { status: 409, statusText: 'Conflict' }
-          );
-        }
+    globalThis.fetch = async (
+      url: string | URL | Request,
+      init?: RequestInit
+    ) => {
+      if (init?.method === 'POST') {
+        log('delaying....');
+        await setTimeout(1000);
+      } else {
+        log('not delaying');
       }
       return originalFetch(url, init);
     };
 
-    try {
-      const file = await createDataFile(100, 'forced_conflict');
-      
-      const result = await addDataFiles({
-        tableBucketARN: config.tableBucketARN,
-        namespace,
-        name,
-        lists: [
-          {
-            specId: 0,
-            schemaId: 1,
-            files: [file],
-          },
-        ],
-      });
-      
-      log('Forced conflict result:', result);
-      
-      // Should have at least 1 retry due to forced conflict
-      assert(result.retriesNeeded > 0, `Expected retries due to forced conflict but got: ${result.retriesNeeded}`);
-      assert(result.snapshotId > 0n, 'Should have valid snapshot ID after retry');
-      
-      log(`Success! Forced conflict resulted in ${result.retriesNeeded} retries`);
-    } finally {
-      globalThis.fetch = originalFetch;
-    }
-  });
-
-  await t.test('real parallel commits', async () => {
-    // Pre-create files to minimize timing differences
     const file1 = await createDataFile(200, 'real_parallel1');
     const file2 = await createDataFile(201, 'real_parallel2');
-    
-    const addFiles1 = () => addDataFiles({
-      tableBucketARN: config.tableBucketARN,
-      namespace,
-      name,
-      lists: [
-        {
-          specId: 0,
-          schemaId: 1,
-          files: [file1],
-        },
-      ],
-    });
 
-    const addFiles2 = () => addDataFiles({
-      tableBucketARN: config.tableBucketARN,
-      namespace,
-      name,
-      lists: [
-        {
-          specId: 0,
-          schemaId: 1,
-          files: [file2],
-        },
-      ],
-    });
-
-    try {
-      const [result1, result2] = await Promise.all([addFiles1(), addFiles2()]);
-      
-      log('Real parallel result 1:', result1);
-      log('Real parallel result 2:', result2);
-      
-      const totalRetries = result1.retriesNeeded + result2.retriesNeeded;
-      log(`Real parallel total retries: ${totalRetries}`);
-      
-      // Both should succeed
-      assert(result1.snapshotId > 0n, 'Result 1 should have valid snapshot ID');
-      assert(result2.snapshotId > 0n, 'Result 2 should have valid snapshot ID');
-      
-      if (totalRetries > 0) {
-        log(`Success! Real parallel execution resulted in ${totalRetries} retries`);
-      } else {
-        log('No retries in real parallel execution - this can happen with fast execution');
+    async function _addFiles(file: Awaited<ReturnType<typeof createDataFile>>) {
+      try {
+        const result = await addDataFiles({
+          tableBucketARN: config.tableBucketARN,
+          namespace,
+          name,
+          lists: [{ specId: 0, schemaId: 1, files: [file] }],
+        });
+        return result;
+      } catch (e) {
+        return e;
       }
-    } catch (error) {
-      log('Real parallel test failed, but forced conflict test already verified retry logic works');
-      // Don't fail the test since we already proved retry logic works
     }
+
+    const results = await Promise.all([_addFiles(file1), _addFiles(file2)]);
+    const result1 = results[0] as AddDataFilesResult | Error;
+    const result2 = results[1] as AddDataFilesResult | Error;
+    globalThis.fetch = originalFetch;
+    log('Real parallel result 1:', result1);
+    log('Real parallel result 2:', result2);
+    if (result1 instanceof Error) {
+      throw result1;
+    } else if (result2 instanceof Error) {
+      throw result2;
+    }
+    const totalRetries = result1.retriesNeeded + result2.retriesNeeded;
+    log(`Real parallel total retries: ${totalRetries}`);
+
+    // Both should succeed
+    assert(result1.snapshotId > 0n, 'Result 1 should have valid snapshot ID');
+    assert(result2.snapshotId > 0n, 'Result 2 should have valid snapshot ID');
+    assert(totalRetries > 0, 'one branch must retry at least once');
   });
 });

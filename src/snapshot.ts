@@ -27,7 +27,7 @@ export interface AddDataFilesParams {
   lists: AddFileList[];
   retryCount?: number;
 }
-export interface AddDataResult {
+export interface AddDataFilesResult {
   result: JSONObject;
   retriesNeeded: number;
   parentSnapshotId: bigint;
@@ -36,7 +36,7 @@ export interface AddDataResult {
 }
 export async function addDataFiles(
   params: AddDataFilesParams
-): Promise<AddDataResult> {
+): Promise<AddDataFilesResult> {
   const { credentials } = params;
   const retry_max = params.retryCount ?? DEFAULT_RETRY_COUNT;
   const region = params.tableBucketARN.split(':')[3];
@@ -44,12 +44,23 @@ export async function addDataFiles(
     throw new Error('bad tableBucketARN');
   }
   const snapshot_id = _randomBigInt64();
-  let metadata = await getMetadata(params);
+  const metadata = await getMetadata(params);
   const bucket = metadata.location.split('/').slice(-1)[0];
+  const parent_snapshot_id = BigInt(metadata['current-snapshot-id'] ?? -1n);
+  const snapshot =
+    metadata.snapshots.find((s) => s['snapshot-id'] === parent_snapshot_id) ??
+    null;
   if (!bucket) {
     throw new Error('bad manifest location');
   }
-  const sequence_number =
+  if (parent_snapshot_id > 0n && !snapshot) {
+    throw new Error('no old snapshot');
+  }
+  let old_list_key = snapshot ? parseS3Url(snapshot['manifest-list']).key : '';
+  if (snapshot && !old_list_key) {
+    throw new Error('last snapshot invalid');
+  }
+  let sequence_number =
     BigInt(
       metadata.snapshots.reduce(
         (memo, s) =>
@@ -81,22 +92,12 @@ export async function addDataFiles(
       return addManifest(opts);
     })
   );
+  let expected_snapshot_id = parent_snapshot_id;
 
   for (let try_count = 0; ; try_count++) {
-    const parent_snapshot_id = BigInt(metadata['current-snapshot-id'] ?? -1n);
-    const snapshot =
-      metadata.snapshots.find((s) => s['snapshot-id'] === parent_snapshot_id) ??
-      null;
-    if (parent_snapshot_id > 0n && !snapshot) {
-      throw new Error('no old snapshot');
-    }
     const manifest_list_key = `metadata/${randomUUID()}.avro`;
     const manifest_list_url = `s3://${bucket}/${manifest_list_key}`;
-    if (snapshot) {
-      const { key: old_list_key } = parseS3Url(snapshot['manifest-list']);
-      if (!old_list_key) {
-        throw new Error('snapshot invalid');
-      }
+    if (old_list_key) {
       await updateManifestList({
         credentials,
         region,
@@ -135,15 +136,16 @@ export async function addDataFiles(
         method: 'POST',
         suffix: `/namespaces/${params.namespace}/tables/${params.name}`,
         body: {
-          requirements: snapshot
-            ? [
-                {
-                  type: 'assert-ref-snapshot-id',
-                  ref: 'main',
-                  'snapshot-id': parent_snapshot_id,
-                },
-              ]
-            : [],
+          requirements:
+            expected_snapshot_id > 0n
+              ? [
+                  {
+                    type: 'assert-ref-snapshot-id',
+                    ref: 'main',
+                    'snapshot-id': expected_snapshot_id,
+                  },
+                ]
+              : [],
           updates: [
             {
               action: 'add-snapshot',
@@ -185,7 +187,41 @@ export async function addDataFiles(
         throw e;
       }
     }
-    metadata = await getMetadata(params);
+
+    // we do a merge in the append only simultanious case
+    const conflict_metadata = await getMetadata(params);
+    const conflict_snapshot_id = BigInt(
+      conflict_metadata['current-snapshot-id'] ?? -1n
+    );
+    if (conflict_snapshot_id <= 0n) {
+      throw new Error('conflict');
+    }
+    const conflict_snap = conflict_metadata.snapshots.find(
+      (s) => s['snapshot-id'] === conflict_snapshot_id
+    );
+    if (!conflict_snap) {
+      throw new Error('conflict');
+    }
+    if (
+      conflict_snap.summary.operation === 'append' &&
+      BigInt(conflict_snap['sequence-number']) === sequence_number
+    ) {
+      old_list_key = parseS3Url(conflict_snap['manifest-list']).key;
+      if (!old_list_key) {
+        throw new Error('conflict');
+      }
+      added_files += parseInt(
+        conflict_snap.summary['added-data-files'] ?? '0',
+        10
+      );
+      added_records += BigInt(conflict_snap.summary['added-records'] ?? '0');
+      added_size += BigInt(conflict_snap.summary['added-files-size'] ?? '0');
+
+      expected_snapshot_id = conflict_snapshot_id;
+      sequence_number++;
+    } else {
+      throw new Error('conflict');
+    }
   }
 }
 export interface SetCurrentCommitParams {

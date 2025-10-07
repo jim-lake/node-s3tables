@@ -56,13 +56,16 @@ export interface IcebergPartitionSpec {
   'spec-id': number;
   fields: IcebergPartitionField[];
 }
+export interface IcebergSnapshotSummary extends Record<string, string> {
+  operation: 'append' | 'replace' | 'overwrite' | 'delete';
+}
 export interface IcebergSnapshot {
   'snapshot-id': bigint | number;
   'parent-snapshot-id'?: bigint | number;
   'sequence-number': number;
   'timestamp-ms': number;
   'manifest-list': string;
-  summary: Record<string, string>;
+  summary: IcebergSnapshotSummary;
   'schema-id'?: number;
 }
 export interface IcebergMetadata {
@@ -73,6 +76,6 @@ export interface IcebergMetadata {
   'default-spec-id': number;
   'partition-specs': IcebergPartitionSpec[];
   'last-partition-id': number;
-  'current-snapshot-id': bigint | number;
+  'current-snapshot-id'?: bigint | number;
   location: string;
 }

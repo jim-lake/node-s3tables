@@ -67,13 +67,16 @@ interface IcebergPartitionSpec {
     'spec-id': number;
     fields: IcebergPartitionField[];
 }
+interface IcebergSnapshotSummary extends Record<string, string> {
+    operation: 'append' | 'replace' | 'overwrite' | 'delete';
+}
 interface IcebergSnapshot {
     'snapshot-id': bigint | number;
     'parent-snapshot-id'?: bigint | number;
     'sequence-number': number;
     'timestamp-ms': number;
     'manifest-list': string;
-    summary: Record<string, string>;
+    summary: IcebergSnapshotSummary;
     'schema-id'?: number;
 }
 interface IcebergMetadata {
@@ -84,7 +87,7 @@ interface IcebergMetadata {
     'default-spec-id': number;
     'partition-specs': IcebergPartitionSpec[];
     'last-partition-id': number;
-    'current-snapshot-id': bigint | number;
+    'current-snapshot-id'?: bigint | number;
     location: string;
 }
 
@@ -167,14 +170,14 @@ interface AddDataFilesParams {
     lists: AddFileList[];
     retryCount?: number;
 }
-interface AddDataResult {
+interface AddDataFilesResult {
     result: JSONObject;
     retriesNeeded: number;
     parentSnapshotId: bigint;
     snapshotId: bigint;
     sequenceNumber: bigint;
 }
-declare function addDataFiles(params: AddDataFilesParams): Promise<AddDataResult>;
+declare function addDataFiles(params: AddDataFilesParams): Promise<AddDataFilesResult>;
 interface SetCurrentCommitParams {
     credentials?: AwsCredentialIdentity;
     tableBucketARN: string;
@@ -194,4 +197,4 @@ declare const _default: {
 };
 
 export { addDataFiles, addManifest, addPartitionSpec, addSchema, _default as default, getMetadata, setCurrentCommit };
-export type { AddDataFilesParams, AddDataResult, AddFile, AddFileList, AddManifestParams, AddPartitionSpecParams, AddSchemaParams, GetMetadataParams, IcebergComplexType, IcebergMetadata, IcebergPartitionField, IcebergPartitionSpec, IcebergPrimitiveType, IcebergSchema, IcebergSchemaField, IcebergSnapshot, IcebergTransform, IcebergType, SetCurrentCommitParams, TableLocation };
+export type { AddDataFilesParams, AddDataFilesResult, AddFile, AddFileList, AddManifestParams, AddPartitionSpecParams, AddSchemaParams, GetMetadataParams, IcebergComplexType, IcebergMetadata, IcebergPartitionField, IcebergPartitionSpec, IcebergPrimitiveType, IcebergSchema, IcebergSchemaField, IcebergSnapshot, IcebergSnapshotSummary, IcebergTransform, IcebergType, SetCurrentCommitParams, TableLocation };
