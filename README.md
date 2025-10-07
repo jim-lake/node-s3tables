@@ -382,6 +382,65 @@ Run a single test file:
 npm run test:single test/create.test.ts
 ```
 
+## AWS API Calls and Required Permissions
+
+The library makes calls to multiple AWS services and requires specific IAM permissions:
+
+### S3 Tables Service
+
+**API Calls:**
+- `GetTable` - Used by `getMetadata()` when called with `tableArn`
+- Iceberg REST API calls via HTTPS to `s3tables.{region}.amazonaws.com`
+
+**Required Permissions:**
+- `s3tables:GetTable` - For retrieving table information
+- `s3tables:GetTableData` - For reading table metadata and data objects (includes GetObject, HeadObject, ListParts)
+- `s3tables:PutTableData` - For writing table metadata and data objects (includes PutObject, multipart upload operations)
+- `s3tables:UpdateTableMetadataLocation` - For updating table root pointer during metadata operations
+
+### Function-Specific Permission Requirements
+
+**`getMetadata()`:**
+- When using `tableArn`: `s3tables:GetTable`, `s3tables:GetTableData`
+- When using `tableBucketARN` + `namespace` + `name`: `s3tables:GetTableData`
+
+**`addSchema()`:**
+- `s3tables:PutTableData`, `s3tables:UpdateTableMetadataLocation`
+
+**`addPartitionSpec()`:**
+- `s3tables:PutTableData`, `s3tables:UpdateTableMetadataLocation`
+
+**`addManifest()`:**
+- `s3tables:PutTableData` (for writing manifest files)
+
+**`addDataFiles()`:**
+- `s3tables:GetTableData` (to get current metadata and read existing manifest lists)
+- `s3tables:PutTableData` (to write new manifest files and lists)
+- `s3tables:UpdateTableMetadataLocation` (to add snapshots)
+
+**`setCurrentCommit()`:**
+- `s3tables:PutTableData`, `s3tables:UpdateTableMetadataLocation`
+
+### Example IAM Policy
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3tables:GetTable",
+        "s3tables:GetTableData",
+        "s3tables:PutTableData",
+        "s3tables:UpdateTableMetadataLocation"
+      ],
+      "Resource": "arn:aws:s3tables:*:*:bucket/*/table/*"
+    }
+  ]
+}
+```
+
 ## Configuration
 
 The library uses the AWS SDK for authentication. Configure credentials using:
