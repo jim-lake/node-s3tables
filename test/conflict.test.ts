@@ -142,7 +142,9 @@ void test('conflict test', async (t) => {
     const file1 = await createDataFile(200, 'real_parallel1');
     const file2 = await createDataFile(201, 'real_parallel2');
 
-    async function _addFiles(file: Awaited<ReturnType<typeof createDataFile>>) {
+    async function _addFiles(
+      file: Awaited<ReturnType<typeof createDataFile>>
+    ): Promise<AddDataFilesResult | Error> {
       try {
         const result = await addDataFiles({
           tableBucketARN: config.tableBucketARN,
@@ -152,13 +154,14 @@ void test('conflict test', async (t) => {
         });
         return result;
       } catch (e) {
-        return e;
+        return e as Error;
       }
     }
 
-    const results = await Promise.all([_addFiles(file1), _addFiles(file2)]);
-    const result1 = results[0] as AddDataFilesResult | Error;
-    const result2 = results[1] as AddDataFilesResult | Error;
+    const [result1, result2] = await Promise.all([
+      _addFiles(file1),
+      _addFiles(file2),
+    ]);
     globalThis.fetch = originalFetch;
     log('Real parallel result 1:', result1);
     log('Real parallel result 2:', result2);
@@ -230,7 +233,7 @@ void test('conflict test', async (t) => {
     // Should have data from all commits: first (id=1), second (id=2), and parallel (id=200,201)
     assert(rows.length >= 4, `Expected at least 4 rows, got ${rows.length}`);
 
-    const ids = rows.map((row) => parseInt(row.id)).sort((a, b) => a - b);
+    const ids = rows.map((row) => parseInt(row.id, 10)).sort((a, b) => a - b);
     assert(ids.includes(1), 'Should contain data from first commit (id=1)');
     assert(ids.includes(2), 'Should contain data from second commit (id=2)');
     assert(
@@ -289,7 +292,9 @@ void test('conflict test', async (t) => {
         ];
       }
 
-      async function commitFiles(writerNum: number) {
+      async function commitFiles(
+        writerNum: number
+      ): Promise<Error | AddDataFilesResult> {
         try {
           const lists = await createCommitFiles(writerNum);
           const result = await addDataFiles({
@@ -300,22 +305,17 @@ void test('conflict test', async (t) => {
           });
           return result;
         } catch (e) {
-          return e;
+          return e as Error;
         }
       }
 
-      const results = await Promise.all([
+      const [result1, result2, result3] = await Promise.all([
         commitFiles(1),
         commitFiles(2),
         commitFiles(3),
       ]);
 
       globalThis.fetch = originalFetch;
-
-      const [result1, result2, result3] = results as (
-        | AddDataFilesResult
-        | Error
-      )[];
 
       log('Three-way result 1:', result1);
       log('Three-way result 2:', result2);

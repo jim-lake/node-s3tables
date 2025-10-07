@@ -317,10 +317,12 @@ The library makes calls to multiple AWS services and requires specific IAM permi
 ### S3 Tables Service
 
 **API Calls:**
+
 - `GetTable` - Used by `getMetadata()` when called with `tableArn`
 - Iceberg REST API calls via HTTPS to `s3tables.{region}.amazonaws.com`
 
 **Required Permissions:**
+
 - `s3tables:GetTable` - For retrieving table information
 - `s3tables:GetTableData` - For reading table metadata and data objects (includes GetObject, HeadObject, ListParts)
 - `s3tables:PutTableData` - For writing table metadata and data objects (includes PutObject, multipart upload operations)
@@ -329,24 +331,30 @@ The library makes calls to multiple AWS services and requires specific IAM permi
 ### Function-Specific Permission Requirements
 
 **`getMetadata()`:**
+
 - When using `tableArn`: `s3tables:GetTable`, `s3tables:GetTableData`
 - When using `tableBucketARN` + `namespace` + `name`: `s3tables:GetTableData`
 
 **`addSchema()`:**
+
 - `s3tables:PutTableData`, `s3tables:UpdateTableMetadataLocation`
 
 **`addPartitionSpec()`:**
+
 - `s3tables:PutTableData`, `s3tables:UpdateTableMetadataLocation`
 
 **`addManifest()`:**
+
 - `s3tables:PutTableData` (for writing manifest files)
 
 **`addDataFiles()`:**
+
 - `s3tables:GetTableData` (to get current metadata and read existing manifest lists)
 - `s3tables:PutTableData` (to write new manifest files and lists)
 - `s3tables:UpdateTableMetadataLocation` (to add snapshots)
 
 **`setCurrentCommit()`:**
+
 - `s3tables:PutTableData`, `s3tables:UpdateTableMetadataLocation`
 
 ### Example IAM Policy
