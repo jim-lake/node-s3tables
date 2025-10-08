@@ -1022,11 +1022,19 @@ function parse(text) {
     return LosslessJson__namespace.parse(text, null, customNumberParser);
 }
 
-class HttpError extends Error {
+class IcebergHttpError extends Error {
     status;
-    constructor(status, message) {
+    text;
+    body;
+    constructor(status, body, message) {
         super(message);
         this.status = status;
+        if (typeof body === 'string') {
+            this.text = body;
+        }
+        else if (body && typeof body === 'object') {
+            this.body = body;
+        }
     }
 }
 async function icebergRequest(params) {
@@ -1068,15 +1076,15 @@ async function icebergRequest(params) {
     }
     const res = await fetch(url, fetch_opts);
     const text = await res.text();
-    if (!res.ok) {
-        if (res.status) {
-            throw new HttpError(res.status, `request failed: ${res.statusText} ${text}`);
-        }
-        throw new Error(`request failed: ${res.statusText} ${text}`);
-    }
     const ret = res.headers.get('content-type') === 'application/json'
         ? _parse(text)
         : text;
+    if (!res.ok) {
+        if (res.status) {
+            throw new IcebergHttpError(res.status, ret, `request failed: ${res.statusText} ${text}`);
+        }
+        throw new Error(`request failed: ${res.statusText} ${text}`);
+    }
     return ret;
 }
 function _parse(text) {
@@ -1296,7 +1304,9 @@ async function addDataFiles(params) {
             };
         }
         catch (e) {
-            if (e instanceof HttpError && e.status === 409 && try_count < retry_max) ;
+            if (e instanceof IcebergHttpError &&
+                e.status === 409 &&
+                try_count < retry_max) ;
             else {
                 throw e;
             }
@@ -1358,6 +1368,7 @@ function _randomBigInt64() {
 }
 
 var index = {
+    IcebergHttpError,
     getMetadata,
     addSchema,
     addPartitionSpec,
@@ -1366,6 +1377,7 @@ var index = {
     setCurrentCommit,
 };
 
+exports.IcebergHttpError = IcebergHttpError;
 exports.addDataFiles = addDataFiles;
 exports.addManifest = addManifest;
 exports.addPartitionSpec = addPartitionSpec;

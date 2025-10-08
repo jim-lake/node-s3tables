@@ -3,7 +3,7 @@ import { avroToBuffer } from './avro_helper';
 import { ManifestListType } from './avro_schema';
 import { addManifest } from './manifest';
 import { getMetadata } from './metadata';
-import { icebergRequest, HttpError } from './request';
+import { icebergRequest, IcebergHttpError } from './request';
 import { parseS3Url, writeS3File, updateManifestList } from './s3_tools';
 
 import type { AwsCredentialIdentity } from '@aws-sdk/types';
@@ -181,7 +181,11 @@ export async function addDataFiles(
         sequenceNumber: sequence_number,
       };
     } catch (e) {
-      if (e instanceof HttpError && e.status === 409 && try_count < retry_max) {
+      if (
+        e instanceof IcebergHttpError &&
+        e.status === 409 &&
+        try_count < retry_max
+      ) {
         // retry case
       } else {
         throw e;

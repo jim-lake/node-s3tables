@@ -187,7 +187,15 @@ interface SetCurrentCommitParams {
 }
 declare function setCurrentCommit(params: SetCurrentCommitParams): Promise<JSONObject>;
 
+declare class IcebergHttpError extends Error {
+    status: number;
+    text?: string;
+    body?: JSONObject;
+    constructor(status: number, body: JSONValue, message: string);
+}
+
 declare const _default: {
+    IcebergHttpError: typeof IcebergHttpError;
     getMetadata: typeof getMetadata;
     addSchema: typeof addSchema;
     addPartitionSpec: typeof addPartitionSpec;
@@ -196,5 +204,5 @@ declare const _default: {
     setCurrentCommit: typeof setCurrentCommit;
 };
 
-export { addDataFiles, addManifest, addPartitionSpec, addSchema, _default as default, getMetadata, setCurrentCommit };
+export { IcebergHttpError, addDataFiles, addManifest, addPartitionSpec, addSchema, _default as default, getMetadata, setCurrentCommit };
 export type { AddDataFilesParams, AddDataFilesResult, AddFile, AddFileList, AddManifestParams, AddPartitionSpecParams, AddSchemaParams, GetMetadataParams, IcebergComplexType, IcebergMetadata, IcebergPartitionField, IcebergPartitionSpec, IcebergPrimitiveType, IcebergSchema, IcebergSchemaField, IcebergSnapshot, IcebergSnapshotSummary, IcebergTransform, IcebergType, SetCurrentCommitParams, TableLocation };

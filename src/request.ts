@@ -5,16 +5,23 @@ import { defaultProvider } from '@aws-sdk/credential-provider-node';
 
 import { parse, stringify } from './json';
 
-import type { JSONObject } from './json';
+import type { JSONObject, JSONValue } from './json';
 import type { AwsCredentialIdentity } from '@aws-sdk/types';
 
 export default { icebergRequest };
 
-export class HttpError extends Error {
+export class IcebergHttpError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  text?: string;
+  body?: JSONObject;
+  constructor(status: number, body: JSONValue, message: string) {
     super(message);
     this.status = status;
+    if (typeof body === 'string') {
+      this.text = body;
+    } else if (body && typeof body === 'object') {
+      this.body = body as JSONObject;
+    }
   }
 }
 interface GetParams {
@@ -67,19 +74,20 @@ export async function icebergRequest<T = JSONObject>(
   }
   const res = await fetch(url, fetch_opts);
   const text = await res.text();
+  const ret =
+    res.headers.get('content-type') === 'application/json'
+      ? _parse(text)
+      : text;
   if (!res.ok) {
     if (res.status) {
-      throw new HttpError(
+      throw new IcebergHttpError(
         res.status,
+        ret,
         `request failed: ${res.statusText} ${text}`
       );
     }
     throw new Error(`request failed: ${res.statusText} ${text}`);
   }
-  const ret =
-    res.headers.get('content-type') === 'application/json'
-      ? _parse(text)
-      : text;
   return ret as T;
 }
 function _parse(text: string) {
