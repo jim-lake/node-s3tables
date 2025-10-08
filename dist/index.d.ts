@@ -119,13 +119,6 @@ interface AddManifestParams {
 }
 declare function addManifest(params: AddManifestParams): Promise<ManifestListRecord>;
 
-type JSONPrimitive = string | number | boolean | null | bigint | undefined;
-type JSONValue = JSONPrimitive | JSONObject | JSONArray;
-interface JSONObject {
-    [key: string]: JSONValue;
-}
-type JSONArray = JSONValue[];
-
 type TableLocation = {
     tableArn: string;
 } | {
@@ -146,7 +139,11 @@ interface AddSchemaParams {
     schemaId: number;
     fields: IcebergSchemaField[];
 }
-declare function addSchema(params: AddSchemaParams): Promise<JSONObject>;
+interface IcebergUpdateResponse {
+    metadata: IcebergMetadata;
+    'metadata-location': string;
+}
+declare function addSchema(params: AddSchemaParams): Promise<IcebergUpdateResponse>;
 interface AddPartitionSpecParams {
     credentials?: AwsCredentialIdentity;
     tableBucketARN: string;
@@ -155,7 +152,14 @@ interface AddPartitionSpecParams {
     specId: number;
     fields: IcebergPartitionField[];
 }
-declare function addPartitionSpec(params: AddPartitionSpecParams): Promise<JSONObject>;
+declare function addPartitionSpec(params: AddPartitionSpecParams): Promise<IcebergUpdateResponse>;
+
+type JSONPrimitive = string | number | boolean | null | bigint | undefined;
+type JSONValue = JSONPrimitive | JSONObject | JSONArray;
+interface JSONObject {
+    [key: string]: JSONValue;
+}
+type JSONArray = JSONValue[];
 
 interface AddFileList {
     specId: number;
@@ -205,4 +209,4 @@ declare const _default: {
 };
 
 export { IcebergHttpError, addDataFiles, addManifest, addPartitionSpec, addSchema, _default as default, getMetadata, setCurrentCommit };
-export type { AddDataFilesParams, AddDataFilesResult, AddFile, AddFileList, AddManifestParams, AddPartitionSpecParams, AddSchemaParams, GetMetadataParams, IcebergComplexType, IcebergMetadata, IcebergPartitionField, IcebergPartitionSpec, IcebergPrimitiveType, IcebergSchema, IcebergSchemaField, IcebergSnapshot, IcebergSnapshotSummary, IcebergTransform, IcebergType, SetCurrentCommitParams, TableLocation };
+export type { AddDataFilesParams, AddDataFilesResult, AddFile, AddFileList, AddManifestParams, AddPartitionSpecParams, AddSchemaParams, GetMetadataParams, IcebergComplexType, IcebergMetadata, IcebergPartitionField, IcebergPartitionSpec, IcebergPrimitiveType, IcebergSchema, IcebergSchemaField, IcebergSnapshot, IcebergSnapshotSummary, IcebergTransform, IcebergType, IcebergUpdateResponse, SetCurrentCommitParams, TableLocation };

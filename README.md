@@ -81,10 +81,10 @@ Adds a new schema to an S3 table and sets it as current.
 - `params.fields` (IcebergSchemaField[]) - Array of schema fields
 - `params.credentials` (AwsCredentialIdentity, optional) - AWS credentials
 
-**Returns:** Promise<string>
+**Returns:** Promise<IcebergUpdateResponse>
 
 ```javascript
-await addSchema({
+const result = await addSchema({
   tableBucketARN: 'arn:aws:s3tables:us-west-2:123456789012:bucket/my-bucket',
   namespace: 'sales',
   name: 'daily_sales',
@@ -95,6 +95,9 @@ await addSchema({
     { id: 3, name: 'sales_amount', required: false, type: 'double' },
   ],
 });
+
+// result.metadata contains the updated table metadata
+// result['metadata-location'] contains the S3 path to the new metadata file
 ```
 
 ### addPartitionSpec(params)
@@ -110,7 +113,7 @@ Adds a new partition specification to an S3 table and sets it as default.
 - `params.fields` (IcebergPartitionField[]) - Array of partition fields
 - `params.credentials` (AwsCredentialIdentity, optional) - AWS credentials
 
-**Returns:** Promise<string>
+**Returns:** Promise<IcebergUpdateResponse>
 
 ```javascript
 await addPartitionSpec({
@@ -231,6 +234,15 @@ await setCurrentCommit({
 ```
 
 ## Type Definitions
+
+### IcebergUpdateResponse
+
+```typescript
+interface IcebergUpdateResponse {
+  metadata: IcebergMetadata;
+  'metadata-location': string;
+}
+```
 
 ### AddFileList
 
