@@ -46,7 +46,7 @@ export async function addDataFiles(
   const snapshot_id = _randomBigInt64();
   const metadata = await getMetadata(params);
   const bucket = metadata.location.split('/').slice(-1)[0];
-  const parent_snapshot_id = BigInt(metadata['current-snapshot-id'] ?? -1n);
+  const parent_snapshot_id = BigInt(metadata['current-snapshot-id']);
   const snapshot =
     metadata.snapshots.find((s) => s['snapshot-id'] === parent_snapshot_id) ??
     null;
@@ -195,7 +195,7 @@ export async function addDataFiles(
     // we do a merge in the append only simultanious case
     const conflict_metadata = await getMetadata(params);
     const conflict_snapshot_id = BigInt(
-      conflict_metadata['current-snapshot-id'] ?? -1n
+      conflict_metadata['current-snapshot-id']
     );
     if (conflict_snapshot_id <= 0n) {
       throw new Error('conflict');

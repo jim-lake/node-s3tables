@@ -14,7 +14,7 @@ void test('metadata error scenarios', async (t) => {
           name: 'nonexistent_table',
         });
       },
-      (error: any) => {
+      (error: Error) => {
         assert(
           error.message.includes('does not exist'),
           'Error should mention table does not exist'
@@ -33,7 +33,7 @@ void test('metadata error scenarios', async (t) => {
           name: 'nonexistent_table',
         });
       },
-      (error: any) => {
+      (error: Error) => {
         assert(
           error.message.includes('does not exist'),
           'Error should mention table does not exist'
@@ -51,7 +51,7 @@ void test('metadata error scenarios', async (t) => {
             'arn:aws:s3tables:us-west-2:123456789012:bucket/invalid/table/nonexistent',
         });
       },
-      (error: any) => {
+      (error: Error) => {
         assert(
           error.message.includes('not valid'),
           'Error should mention ARN is not valid'
@@ -74,7 +74,7 @@ void test('metadata error scenarios', async (t) => {
           ],
         });
       },
-      (error: any) => {
+      (error: Error) => {
         assert(
           error.message.includes('does not exist'),
           'Error should mention table does not exist'
@@ -97,7 +97,7 @@ void test('metadata error scenarios', async (t) => {
           ],
         });
       },
-      (error: any) => {
+      (error: Error) => {
         assert(
           error.message.includes('does not exist'),
           'Error should mention table does not exist'
@@ -125,7 +125,7 @@ void test('metadata error scenarios', async (t) => {
           ],
         });
       },
-      (error: any) => {
+      (error: Error) => {
         assert(
           error.message.includes('does not exist'),
           'Error should mention table does not exist'
@@ -153,7 +153,7 @@ void test('metadata error scenarios', async (t) => {
           ],
         });
       },
-      (error: any) => {
+      (error: Error) => {
         assert(
           error.message.includes('does not exist'),
           'Error should mention table does not exist'
@@ -175,13 +175,13 @@ void test('metadata error scenarios', async (t) => {
             {
               id: 1,
               name: 'test_field',
-              type: 'invalid_type' as any,
+              type: 'invalid_type' as never,
               required: true,
             },
           ],
         });
       },
-      (error: any) => {
+      (error: Error) => {
         assert(
           error instanceof Error,
           'Should throw an error for invalid field type'
@@ -205,7 +205,7 @@ void test('metadata error scenarios', async (t) => {
           ],
         });
       },
-      (error: any) => {
+      (error: Error) => {
         assert(
           error instanceof Error,
           'Should throw an error for duplicate field ids'
@@ -228,12 +228,12 @@ void test('metadata error scenarios', async (t) => {
               'field-id': 1000,
               name: 'test_partition',
               'source-id': 1,
-              transform: 'invalid_transform' as any,
+              transform: 'invalid_transform' as never,
             },
           ],
         });
       },
-      (error: any) => {
+      (error: Error) => {
         assert(
           error instanceof Error,
           'Should throw an error for invalid transform'
@@ -267,7 +267,7 @@ void test('metadata error scenarios', async (t) => {
           ],
         });
       },
-      (error: any) => {
+      (error: Error) => {
         assert(
           error instanceof Error,
           'Should throw an error for duplicate partition field ids'
