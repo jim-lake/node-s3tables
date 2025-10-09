@@ -76,6 +76,6 @@ export interface IcebergMetadata {
   'default-spec-id': number;
   'partition-specs': IcebergPartitionSpec[];
   'last-partition-id': number;
-  'current-snapshot-id'?: bigint | number;
+  'current-snapshot-id': bigint | number;
   location: string;
 }

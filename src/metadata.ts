@@ -70,7 +70,9 @@ export interface IcebergUpdateResponse {
   'metadata-location': string;
 }
 
-export async function addSchema(params: AddSchemaParams): Promise<IcebergUpdateResponse> {
+export async function addSchema(
+  params: AddSchemaParams
+): Promise<IcebergUpdateResponse> {
   return icebergRequest<IcebergUpdateResponse>({
     tableBucketARN: params.tableBucketARN,
     method: 'POST',
@@ -99,7 +101,9 @@ export interface AddPartitionSpecParams {
   specId: number;
   fields: IcebergPartitionField[];
 }
-export async function addPartitionSpec(params: AddPartitionSpecParams): Promise<IcebergUpdateResponse> {
+export async function addPartitionSpec(
+  params: AddPartitionSpecParams
+): Promise<IcebergUpdateResponse> {
   return icebergRequest<IcebergUpdateResponse>({
     tableBucketARN: params.tableBucketARN,
     method: 'POST',
