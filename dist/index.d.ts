@@ -87,7 +87,7 @@ interface IcebergMetadata {
     'default-spec-id': number;
     'partition-specs': IcebergPartitionSpec[];
     'last-partition-id': number;
-    'current-snapshot-id'?: bigint | number;
+    'current-snapshot-id': bigint | number;
     location: string;
 }
 
@@ -171,6 +171,7 @@ interface AddDataFilesParams {
     tableBucketARN: string;
     namespace: string;
     name: string;
+    snapshotId?: bigint;
     lists: AddFileList[];
     retryCount?: number;
 }

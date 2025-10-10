@@ -24,6 +24,7 @@ export interface AddDataFilesParams {
   tableBucketARN: string;
   namespace: string;
   name: string;
+  snapshotId?: bigint;
   lists: AddFileList[];
   retryCount?: number;
 }
@@ -43,7 +44,7 @@ export async function addDataFiles(
   if (!region) {
     throw new Error('bad tableBucketARN');
   }
-  const snapshot_id = _randomBigInt64();
+  const snapshot_id = params.snapshotId ?? _randomBigInt64();
   const metadata = await getMetadata(params);
   const bucket = metadata.location.split('/').slice(-1)[0];
   const parent_snapshot_id = BigInt(metadata['current-snapshot-id']);
