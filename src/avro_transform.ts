@@ -148,7 +148,7 @@ type NaNOnly = number & { __nan: true };
 const NaNValue: NaNOnly = NaN as NaNOnly;
 
 export function makeBounds(
-  paritions: PartitionRecord,
+  partitions: PartitionRecord,
   spec: IcebergPartitionSpec,
   schema: IcebergSchema
 ): (Buffer | null | NaNOnly)[] {
@@ -157,10 +157,10 @@ export function makeBounds(
     if (!schemaField) {
       throw new Error(`Schema field not found for source-id ${f['source-id']}`);
     }
-    if (!(f.name in paritions)) {
-      throw new Error(`paritions missing ${f.name}`);
+    if (!(f.name in partitions)) {
+      throw new Error(`partitions missing ${f.name}`);
     }
-    const raw = paritions[f.name];
+    const raw = partitions[f.name];
     if (typeof raw === 'number' && isNaN(raw)) {
       return NaNValue;
     }

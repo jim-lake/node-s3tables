@@ -745,16 +745,16 @@ function _encodeValue(raw, transform, out_type) {
     }
 }
 const NaNValue = NaN;
-function makeBounds(paritions, spec, schema) {
+function makeBounds(partitions, spec, schema) {
     return spec.fields.map((f) => {
         const schemaField = schema.fields.find((sf) => sf.id === f['source-id']);
         if (!schemaField) {
             throw new Error(`Schema field not found for source-id ${f['source-id']}`);
         }
-        if (!(f.name in paritions)) {
-            throw new Error(`paritions missing ${f.name}`);
+        if (!(f.name in partitions)) {
+            throw new Error(`partitions missing ${f.name}`);
         }
-        const raw = paritions[f.name];
+        const raw = partitions[f.name];
         if (typeof raw === 'number' && isNaN(raw)) {
             return NaNValue;
         }
