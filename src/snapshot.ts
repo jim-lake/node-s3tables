@@ -244,6 +244,7 @@ export async function setCurrentCommit(params: SetCurrentCommitParams) {
     method: 'POST',
     suffix: `/namespaces/${params.namespace}/tables/${params.name}`,
     body: {
+      requirements: [],
       updates: [
         {
           action: 'set-snapshot-ref',

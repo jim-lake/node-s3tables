@@ -413,3 +413,120 @@ void test('makeBounds - date string variations', () => {
     'Expected 4-byte buffer for date transform'
   );
 });
+
+void test('makeBounds - integer boundary edge cases', () => {
+  const schema: IcebergSchema = {
+    type: 'struct',
+    'schema-id': 1,
+    fields: [
+      { id: 1, name: 'int_field', type: 'int', required: false },
+      { id: 2, name: 'long_field', type: 'long', required: false },
+    ],
+  };
+
+  const intSpec: IcebergPartitionSpec = {
+    'spec-id': 1,
+    fields: [
+      {
+        'field-id': 1000,
+        name: 'int_partition',
+        'source-id': 1,
+        transform: 'identity',
+      },
+    ],
+  };
+
+  const longSpec: IcebergPartitionSpec = {
+    'spec-id': 1,
+    fields: [
+      {
+        'field-id': 1000,
+        name: 'long_partition',
+        'source-id': 2,
+        transform: 'identity',
+      },
+    ],
+  };
+
+  // Test max 32-bit signed integer
+  const maxInt32Partitions: PartitionRecord = {
+    int_partition: 2147483647, // 2^31 - 1
+  };
+  const maxInt32Result = makeBounds(maxInt32Partitions, intSpec, schema);
+  assert.strictEqual(maxInt32Result.length, 1);
+  assert(Buffer.isBuffer(maxInt32Result[0]));
+  assert.deepStrictEqual(
+    maxInt32Result[0],
+    Buffer.from([255, 255, 255, 127]), // 2147483647 in little-endian
+    'Max int32 should encode correctly'
+  );
+
+  // Test min 32-bit signed integer
+  const minInt32Partitions: PartitionRecord = {
+    int_partition: -2147483648, // -2^31
+  };
+  const minInt32Result = makeBounds(minInt32Partitions, intSpec, schema);
+  assert.strictEqual(minInt32Result.length, 1);
+  assert(Buffer.isBuffer(minInt32Result[0]));
+  assert.deepStrictEqual(
+    minInt32Result[0],
+    Buffer.from([0, 0, 0, 128]), // -2147483648 in little-endian
+    'Min int32 should encode correctly'
+  );
+
+  // Test large bigint that exceeds 32-bit range
+  const largeBigIntPartitions: PartitionRecord = {
+    long_partition: 5000000000n, // > 2^32
+  };
+  const largeBigIntResult = makeBounds(largeBigIntPartitions, longSpec, schema);
+  assert.strictEqual(largeBigIntResult.length, 1);
+  assert(Buffer.isBuffer(largeBigIntResult[0]));
+  assert.strictEqual(largeBigIntResult[0].length, 8, 'Long should be 8 bytes');
+
+  // Test max safe JavaScript integer as bigint
+  const maxSafeBigIntPartitions: PartitionRecord = {
+    long_partition: BigInt(Number.MAX_SAFE_INTEGER),
+  };
+  const maxSafeBigIntResult = makeBounds(
+    maxSafeBigIntPartitions,
+    longSpec,
+    schema
+  );
+  assert.strictEqual(maxSafeBigIntResult.length, 1);
+  assert(Buffer.isBuffer(maxSafeBigIntResult[0]));
+  assert.strictEqual(
+    maxSafeBigIntResult[0].length,
+    8,
+    'Long should be 8 bytes'
+  );
+
+  // Test number that gets converted to int (should truncate decimal)
+  const floatToIntPartitions: PartitionRecord = {
+    int_partition: 42.7, // Should become 42
+  };
+  const floatToIntResult = makeBounds(floatToIntPartitions, intSpec, schema);
+  assert.strictEqual(floatToIntResult.length, 1);
+  assert(Buffer.isBuffer(floatToIntResult[0]));
+  assert.deepStrictEqual(
+    floatToIntResult[0],
+    Buffer.from([42, 0, 0, 0]), // 42 in little-endian
+    'Float should truncate to int'
+  );
+
+  // Test string number conversion to bigint
+  const stringToBigIntPartitions: PartitionRecord = {
+    long_partition: '9223372036854775807', // Max int64 as string
+  };
+  const stringToBigIntResult = makeBounds(
+    stringToBigIntPartitions,
+    longSpec,
+    schema
+  );
+  assert.strictEqual(stringToBigIntResult.length, 1);
+  assert(Buffer.isBuffer(stringToBigIntResult[0]));
+  assert.strictEqual(
+    stringToBigIntResult[0].length,
+    8,
+    'Long should be 8 bytes'
+  );
+});
