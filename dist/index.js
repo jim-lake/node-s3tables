@@ -1181,8 +1181,7 @@ async function addDataFiles(params) {
     const metadata = await getMetadata(params);
     const bucket = metadata.location.split('/').slice(-1)[0];
     const parent_snapshot_id = BigInt(metadata['current-snapshot-id']);
-    const snapshot = metadata.snapshots.find((s) => s['snapshot-id'] === parent_snapshot_id) ??
-        null;
+    const snapshot = metadata.snapshots.find((s) => BigInt(s['snapshot-id']) === parent_snapshot_id) ?? null;
     if (!bucket) {
         throw new Error('bad manifest location');
     }
