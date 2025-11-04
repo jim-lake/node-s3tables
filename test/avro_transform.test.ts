@@ -266,7 +266,7 @@ void test('makeBounds - error cases', () => {
     () => {
       makeBounds(emptyPartitions, spec, schema);
     },
-    /paritions missing partition_field/,
+    /missing partition/,
     'Expected error for missing partition value'
   );
 
