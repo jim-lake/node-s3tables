@@ -65,7 +65,7 @@ export async function addDataFiles(
   }
   let sequence_number = BigInt(metadata['last-sequence-number']) + 1n;
   let remove_snapshot_id = 0n;
-  if (params.maxSnapshots && metadata.snapshots.length > params.maxSnapshots) {
+  if (params.maxSnapshots && metadata.snapshots.length >= params.maxSnapshots) {
     let earliest_time = 0;
     for (const snap of metadata.snapshots) {
       const snap_time = snap['timestamp-ms'];

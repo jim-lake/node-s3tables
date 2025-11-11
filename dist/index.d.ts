@@ -81,6 +81,7 @@ interface IcebergSnapshot {
 }
 interface IcebergMetadata {
     'last-column-id': number;
+    'last-sequence-number': bigint | number;
     'current-schema-id': number;
     schemas: IcebergSchema[];
     snapshots: IcebergSnapshot[];
@@ -182,6 +183,7 @@ interface AddDataFilesParams {
     snapshotId?: bigint;
     lists: AddFileList[];
     retryCount?: number;
+    maxSnapshots?: number;
 }
 interface AddDataFilesResult {
     result: JSONObject;

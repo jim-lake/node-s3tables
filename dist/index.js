@@ -1205,7 +1205,18 @@ async function addDataFiles(params) {
     if (snapshot && !old_list_key) {
         throw new Error('last snapshot invalid');
     }
-    let sequence_number = BigInt(metadata.snapshots.reduce((memo, s) => s['sequence-number'] > memo ? s['sequence-number'] : memo, 0)) + 1n;
+    let sequence_number = BigInt(metadata['last-sequence-number']) + 1n;
+    let remove_snapshot_id = 0n;
+    if (params.maxSnapshots && metadata.snapshots.length >= params.maxSnapshots) {
+        let earliest_time = 0;
+        for (const snap of metadata.snapshots) {
+            const snap_time = snap['timestamp-ms'];
+            if (earliest_time === 0 || snap_time < earliest_time) {
+                earliest_time = snap_time;
+                remove_snapshot_id = BigInt(snap['snapshot-id']);
+            }
+        }
+    }
     let added_files = 0;
     let added_records = 0n;
     let added_size = 0n;
@@ -1265,6 +1276,37 @@ async function addDataFiles(params) {
             });
         }
         try {
+            const updates = [
+                {
+                    action: 'add-snapshot',
+                    snapshot: {
+                        'sequence-number': sequence_number,
+                        'snapshot-id': snapshot_id,
+                        'parent-snapshot-id': parent_snapshot_id,
+                        'timestamp-ms': Date.now(),
+                        summary: {
+                            operation: 'append',
+                            'added-data-files': String(added_files),
+                            'added-records': String(added_records),
+                            'added-files-size': String(added_size),
+                        },
+                        'manifest-list': manifest_list_url,
+                        'schema-id': metadata['current-schema-id'],
+                    },
+                },
+                {
+                    action: 'set-snapshot-ref',
+                    'snapshot-id': snapshot_id,
+                    type: 'branch',
+                    'ref-name': 'main',
+                },
+            ];
+            if (remove_snapshot_id > 0n) {
+                updates.push({
+                    action: 'remove-snapshots',
+                    'snapshot-ids': [remove_snapshot_id],
+                });
+            }
             const result = await icebergRequest({
                 credentials: params.credentials,
                 tableBucketARN: params.tableBucketARN,
@@ -1280,31 +1322,7 @@ async function addDataFiles(params) {
                             },
                         ]
                         : [],
-                    updates: [
-                        {
-                            action: 'add-snapshot',
-                            snapshot: {
-                                'sequence-number': sequence_number,
-                                'snapshot-id': snapshot_id,
-                                'parent-snapshot-id': parent_snapshot_id,
-                                'timestamp-ms': Date.now(),
-                                summary: {
-                                    operation: 'append',
-                                    'added-data-files': String(added_files),
-                                    'added-records': String(added_records),
-                                    'added-files-size': String(added_size),
-                                },
-                                'manifest-list': manifest_list_url,
-                                'schema-id': metadata['current-schema-id'],
-                            },
-                        },
-                        {
-                            action: 'set-snapshot-ref',
-                            'snapshot-id': snapshot_id,
-                            type: 'branch',
-                            'ref-name': 'main',
-                        },
-                    ],
+                    updates,
                 },
             });
             return {
@@ -1318,7 +1336,10 @@ async function addDataFiles(params) {
         catch (e) {
             if (e instanceof IcebergHttpError &&
                 e.status === 409 &&
-                try_count < retry_max) ;
+                try_count < retry_max) {
+                // retry case
+                remove_snapshot_id = 0n;
+            }
             else {
                 throw e;
             }
