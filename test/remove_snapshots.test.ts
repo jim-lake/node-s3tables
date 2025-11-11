@@ -292,18 +292,28 @@ void test('removeSnapshots test', async (t) => {
     log('Snapshots before removal:', snapshotIds);
   });
 
-  await t.test('remove 2 oldest snapshots', async () => {
+  await t.test('remove oldest snapshot', async () => {
     const snapshot0 = snapshotIds[0];
-    const snapshot1 = snapshotIds[1];
     assert(snapshot0);
+    await removeSnapshots({
+      tableBucketARN: config.tableBucketARN,
+      namespace,
+      name,
+      snapshotIds: [snapshot0],
+    });
+    log('Removed oldest snapshot:', snapshot0);
+  });
+
+  await t.test('remove second oldest snapshot', async () => {
+    const snapshot1 = snapshotIds[1];
     assert(snapshot1);
     await removeSnapshots({
       tableBucketARN: config.tableBucketARN,
       namespace,
       name,
-      snapshotIds: [snapshot0, snapshot1],
+      snapshotIds: [snapshot1],
     });
-    log('Removed 2 oldest snapshots:', [snapshot0, snapshot1]);
+    log('Removed second oldest snapshot:', snapshot1);
   });
 
   await t.test('verify 2 snapshots remain', async () => {
