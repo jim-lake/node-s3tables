@@ -153,6 +153,14 @@ interface AddPartitionSpecParams {
     fields: IcebergPartitionField[];
 }
 declare function addPartitionSpec(params: AddPartitionSpecParams): Promise<IcebergUpdateResponse>;
+interface RemoveSnapshotsParams {
+    credentials?: AwsCredentialIdentity;
+    tableBucketARN: string;
+    namespace: string;
+    name: string;
+    snapshotIds: bigint[];
+}
+declare function removeSnapshots(params: RemoveSnapshotsParams): Promise<IcebergUpdateResponse>;
 
 type JSONPrimitive = string | number | boolean | null | bigint | undefined;
 type JSONValue = JSONPrimitive | JSONObject | JSONArray;
@@ -207,7 +215,8 @@ declare const _default: {
     addManifest: typeof addManifest;
     addDataFiles: typeof addDataFiles;
     setCurrentCommit: typeof setCurrentCommit;
+    removeSnapshots: typeof removeSnapshots;
 };
 
-export { IcebergHttpError, addDataFiles, addManifest, addPartitionSpec, addSchema, _default as default, getMetadata, setCurrentCommit };
-export type { AddDataFilesParams, AddDataFilesResult, AddFile, AddFileList, AddManifestParams, AddPartitionSpecParams, AddSchemaParams, GetMetadataParams, IcebergComplexType, IcebergMetadata, IcebergPartitionField, IcebergPartitionSpec, IcebergPrimitiveType, IcebergSchema, IcebergSchemaField, IcebergSnapshot, IcebergSnapshotSummary, IcebergTransform, IcebergType, IcebergUpdateResponse, SetCurrentCommitParams, TableLocation };
+export { IcebergHttpError, addDataFiles, addManifest, addPartitionSpec, addSchema, _default as default, getMetadata, removeSnapshots, setCurrentCommit };
+export type { AddDataFilesParams, AddDataFilesResult, AddFile, AddFileList, AddManifestParams, AddPartitionSpecParams, AddSchemaParams, GetMetadataParams, IcebergComplexType, IcebergMetadata, IcebergPartitionField, IcebergPartitionSpec, IcebergPrimitiveType, IcebergSchema, IcebergSchemaField, IcebergSnapshot, IcebergSnapshotSummary, IcebergTransform, IcebergType, IcebergUpdateResponse, RemoveSnapshotsParams, SetCurrentCommitParams, TableLocation };

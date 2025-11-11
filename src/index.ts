@@ -1,5 +1,10 @@
 import { addManifest } from './manifest';
-import { getMetadata, addSchema, addPartitionSpec } from './metadata';
+import {
+  getMetadata,
+  addSchema,
+  addPartitionSpec,
+  removeSnapshots,
+} from './metadata';
 import { addDataFiles, setCurrentCommit } from './snapshot';
 import { IcebergHttpError } from './request';
 
@@ -22,4 +27,5 @@ export default {
   addManifest,
   addDataFiles,
   setCurrentCommit,
+  removeSnapshots,
 };

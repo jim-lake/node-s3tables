@@ -1168,6 +1168,19 @@ async function addPartitionSpec(params) {
         },
     });
 }
+async function removeSnapshots(params) {
+    return icebergRequest({
+        tableBucketARN: params.tableBucketARN,
+        method: 'POST',
+        suffix: `/namespaces/${params.namespace}/tables/${params.name}`,
+        body: {
+            requirements: [],
+            updates: [
+                { action: 'remove-snapshots', 'snapshot-ids': params.snapshotIds },
+            ],
+        },
+    });
+}
 
 const DEFAULT_RETRY_COUNT = 5;
 async function addDataFiles(params) {
@@ -1344,6 +1357,7 @@ async function setCurrentCommit(params) {
         method: 'POST',
         suffix: `/namespaces/${params.namespace}/tables/${params.name}`,
         body: {
+            requirements: [],
             updates: [
                 {
                     action: 'set-snapshot-ref',
@@ -1374,6 +1388,7 @@ var index = {
     addManifest,
     addDataFiles,
     setCurrentCommit,
+    removeSnapshots,
 };
 
 exports.IcebergHttpError = IcebergHttpError;
@@ -1383,4 +1398,5 @@ exports.addPartitionSpec = addPartitionSpec;
 exports.addSchema = addSchema;
 exports.default = index;
 exports.getMetadata = getMetadata;
+exports.removeSnapshots = removeSnapshots;
 exports.setCurrentCommit = setCurrentCommit;

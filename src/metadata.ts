@@ -13,7 +13,7 @@ import type {
 } from './iceberg';
 export type * from './iceberg';
 
-export default { getMetadata, addSchema, addPartitionSpec };
+export default { getMetadata, addSchema, addPartitionSpec, removeSnapshots };
 
 export type TableLocation =
   | { tableArn: string }
@@ -120,6 +120,28 @@ export async function addPartitionSpec(
           },
         },
         { action: 'set-default-spec', 'spec-id': params.specId },
+      ],
+    },
+  });
+}
+export interface RemoveSnapshotsParams {
+  credentials?: AwsCredentialIdentity;
+  tableBucketARN: string;
+  namespace: string;
+  name: string;
+  snapshotIds: bigint[];
+}
+export async function removeSnapshots(
+  params: RemoveSnapshotsParams
+): Promise<IcebergUpdateResponse> {
+  return icebergRequest<IcebergUpdateResponse>({
+    tableBucketARN: params.tableBucketARN,
+    method: 'POST',
+    suffix: `/namespaces/${params.namespace}/tables/${params.name}`,
+    body: {
+      requirements: [],
+      updates: [
+        { action: 'remove-snapshots', 'snapshot-ids': params.snapshotIds },
       ],
     },
   });
