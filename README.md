@@ -18,6 +18,7 @@ import {
   addManifest,
   addDataFiles,
   setCurrentCommit,
+  removeSnapshots,
 } from 'node-s3tables';
 
 // Get table metadata
@@ -253,6 +254,29 @@ await setCurrentCommit({
   namespace: 'sales',
   name: 'daily_sales',
   snapshotId: 4183020680887155442n,
+});
+```
+
+### removeSnapshots(params)
+
+Removes snapshots from an S3 table. Note: Due to Iceberg limitations, only one snapshot can be removed at a time.
+
+**Parameters:**
+
+- `params.tableBucketARN` (string) - The ARN of the table bucket
+- `params.namespace` (string) - The namespace name
+- `params.name` (string) - The table name
+- `params.snapshotIds` (bigint[]) - Array of snapshot IDs to remove (only provide one snapshot ID)
+- `params.credentials` (AwsCredentialIdentity, optional) - AWS credentials
+
+**Returns:** Promise<IcebergUpdateResponse>
+
+```javascript
+await removeSnapshots({
+  tableBucketARN: 'arn:aws:s3tables:us-west-2:123456789012:bucket/my-bucket',
+  namespace: 'sales',
+  name: 'daily_sales',
+  snapshotIds: [4183020680887155442n], // Only one snapshot ID
 });
 ```
 
