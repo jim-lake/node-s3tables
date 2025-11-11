@@ -8,12 +8,7 @@ import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { ParquetWriter, ParquetSchema } from 'parquetjs';
 import { clients } from './helpers/aws_clients';
 
-import {
-  getMetadata,
-  addSchema,
-  addDataFiles,
-  removeSnapshots,
-} from '../src';
+import { getMetadata, addSchema, addDataFiles, removeSnapshots } from '../src';
 
 const schema = new ParquetSchema({
   app: { type: 'UTF8' },

@@ -70,6 +70,7 @@ export interface IcebergSnapshot {
 }
 export interface IcebergMetadata {
   'last-column-id': number;
+  'last-sequence-number': bigint | number;
   'current-schema-id': number;
   schemas: IcebergSchema[];
   snapshots: IcebergSnapshot[];
