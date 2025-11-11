@@ -184,6 +184,7 @@ Adds data files to an S3 table by creating a new snapshot.
 - `params.namespace` (string) - The namespace name
 - `params.name` (string) - The table name
 - `params.lists` (AddFileList[]) - Array of file lists to add
+- `params.maxSnapshots` (number, optional) - Maximum number of snapshots to retain. When set, automatically removes the oldest snapshot if the count exceeds this limit
 - `params.credentials` (AwsCredentialIdentity, optional) - AWS credentials
 
 **Returns:** Promise<string>
@@ -203,6 +204,28 @@ await addDataFiles({
           partitions: { sale_date_day: '2024-01-01' },
           recordCount: 1000n,
           fileSize: 52428n,
+        },
+      ],
+    },
+  ],
+});
+
+// With automatic snapshot cleanup
+await addDataFiles({
+  tableBucketARN: 'arn:aws:s3tables:us-west-2:123456789012:bucket/my-bucket',
+  namespace: 'sales',
+  name: 'daily_sales',
+  maxSnapshots: 10, // Keep only the 10 most recent snapshots
+  lists: [
+    {
+      specId: 1,
+      schemaId: 2,
+      files: [
+        {
+          file: 's3://my-bucket/data/sales-2024-01-02.parquet',
+          partitions: { sale_date_day: '2024-01-02' },
+          recordCount: 1500n,
+          fileSize: 78643n,
         },
       ],
     },
