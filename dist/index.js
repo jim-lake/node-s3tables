@@ -4,6 +4,7 @@ Object.defineProperty(exports, '__esModule', { value: true });
 
 var node_crypto = require('node:crypto');
 var avsc = require('avsc');
+var zlib = require('node:zlib');
 var clientS3 = require('@aws-sdk/client-s3');
 var clientS3tables = require('@aws-sdk/client-s3tables');
 var libStorage = require('@aws-sdk/lib-storage');
@@ -32,6 +33,7 @@ function _interopNamespaceDefault(e) {
 }
 
 var avsc__namespace = /*#__PURE__*/_interopNamespaceDefault(avsc);
+var zlib__namespace = /*#__PURE__*/_interopNamespaceDefault(zlib);
 var LosslessJson__namespace = /*#__PURE__*/_interopNamespaceDefault(LosslessJson);
 
 function fixupMetadata(metadata) {
@@ -55,6 +57,7 @@ async function avroToBuffer(params) {
             const buffers = [];
             const opts = {
                 writeHeader: true,
+                codecs: { deflate: zlib__namespace.deflateRaw },
                 codec: 'deflate',
                 metadata,
             };
@@ -120,7 +123,12 @@ function _icebergToAvroField(field, schema) {
             }
             throw new Error(`Unsupported transform: ${field.transform} for type`);
     }
-    return { name: field.name, type: ['null', avroType], default: null };
+    return {
+        name: field.name,
+        type: ['null', avroType],
+        default: null,
+        'field-id': field['field-id'],
+    };
 }
 function _mapPrimitiveToAvro(type) {
     switch (type) {
@@ -166,7 +174,9 @@ var ListContent;
     ListContent[ListContent["DELETES"] = 1] = "DELETES";
 })(ListContent || (ListContent = {}));
 const BigIntType = avsc__namespace.types.LongType.__with({
-    fromBuffer: (buf) => buf.readBigInt64LE(),
+    fromBuffer(uint_array) {
+        return Buffer.from(uint_array).readBigInt64LE();
+    },
     toBuffer(n) {
         const buf = Buffer.alloc(8);
         buf.writeBigInt64LE(n);
@@ -531,19 +541,19 @@ const ManifestListType = avsc__namespace.Type.forSchema({
             'field-id': 503,
         },
         {
-            name: 'added_data_files_count',
+            name: 'added_files_count',
             type: 'int',
             doc: 'Added entry count',
             'field-id': 504,
         },
         {
-            name: 'existing_data_files_count',
+            name: 'existing_files_count',
             type: 'int',
             doc: 'Existing entry count',
             'field-id': 505,
         },
         {
-            name: 'deleted_data_files_count',
+            name: 'deleted_files_count',
             type: 'int',
             doc: 'Deleted entry count',
             'field-id': 506,
@@ -837,10 +847,12 @@ async function updateManifestList(params) {
     }
     const passthrough = new node_stream.PassThrough();
     const decoder = new avsc__namespace.streams.BlockDecoder({
+        codecs: { deflate: zlib__namespace.inflateRaw },
         parseHook: () => ManifestListType,
     });
     const encoder = new avsc__namespace.streams.BlockEncoder(ManifestListType, {
         codec: 'deflate',
+        codecs: { deflate: zlib__namespace.deflateRaw },
         metadata,
     });
     encoder.pipe(passthrough);
@@ -961,9 +973,9 @@ async function addManifest(params) {
         sequence_number: params.sequenceNumber,
         min_sequence_number: params.sequenceNumber,
         added_snapshot_id: params.snapshotId,
-        added_data_files_count: params.files.length,
-        existing_data_files_count: 0,
-        deleted_data_files_count: 0,
+        added_files_count: params.files.length,
+        existing_files_count: 0,
+        deleted_files_count: 0,
         added_rows_count,
         existing_rows_count: 0n,
         deleted_rows_count: 0n,

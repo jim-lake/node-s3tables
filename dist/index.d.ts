@@ -20,9 +20,9 @@ interface ManifestListRecord {
     sequence_number: bigint;
     min_sequence_number: bigint;
     added_snapshot_id: bigint;
-    added_data_files_count: number;
-    existing_data_files_count: number;
-    deleted_data_files_count: number;
+    added_files_count: number;
+    existing_files_count: number;
+    deleted_files_count: number;
     added_rows_count: bigint;
     existing_rows_count: bigint;
     deleted_rows_count: bigint;

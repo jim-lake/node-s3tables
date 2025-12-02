@@ -1,6 +1,6 @@
 {
   "name": "node-s3tables",
-  "version": "0.0.10",
+  "version": "0.0.11",
   "description": "node api for dealing with s3tables",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -28,7 +28,7 @@
     "@aws-sdk/client-s3": "^3.901.0",
     "@aws-sdk/client-s3tables": "^3.901.0",
     "@aws-sdk/lib-storage": "^3.901.0",
-    "avsc": "^5.7.9",
+    "avsc": "https://github.com/jim-lake/avsc.git#66bc46724a6db2e55123a94532aca318a133a8ee",
     "lossless-json": "^4.2.0"
   },
   "devDependencies": {

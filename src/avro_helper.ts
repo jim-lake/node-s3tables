@@ -1,4 +1,5 @@
 import * as avsc from 'avsc';
+import * as zlib from 'node:zlib';
 
 import type {
   AvroType,
@@ -40,6 +41,7 @@ export async function avroToBuffer(
       const buffers: Buffer[] = [];
       const opts = {
         writeHeader: true,
+        codecs: { deflate: zlib.deflateRaw },
         codec: 'deflate',
         metadata,
       } as unknown as ConstructorParameters<
@@ -113,7 +115,12 @@ function _icebergToAvroField(
       }
       throw new Error(`Unsupported transform: ${field.transform} for type`);
   }
-  return { name: field.name, type: ['null', avroType], default: null };
+  return {
+    name: field.name,
+    type: ['null', avroType],
+    default: null,
+    'field-id': field['field-id'],
+  };
 }
 function _mapPrimitiveToAvro(type: string): AvroType {
   switch (type) {

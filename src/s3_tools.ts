@@ -7,6 +7,7 @@ import { S3TablesClient } from '@aws-sdk/client-s3tables';
 import { Upload } from '@aws-sdk/lib-storage';
 import * as avsc from 'avsc';
 import { PassThrough } from 'node:stream';
+import * as zlib from 'node:zlib';
 
 import { fixupMetadata } from './avro_helper';
 import { ManifestListType } from './avro_schema';
@@ -121,10 +122,12 @@ export async function updateManifestList(params: UpdateManifestListParams) {
   }
   const passthrough = new PassThrough();
   const decoder = new avsc.streams.BlockDecoder({
+    codecs: { deflate: zlib.inflateRaw },
     parseHook: () => ManifestListType,
   });
   const encoder = new avsc.streams.BlockEncoder(ManifestListType, {
     codec: 'deflate',
+    codecs: { deflate: zlib.deflateRaw },
     metadata,
   } as ConstructorParameters<typeof avsc.streams.BlockEncoder>[1]);
   encoder.pipe(passthrough);

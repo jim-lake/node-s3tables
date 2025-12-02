@@ -23,7 +23,7 @@ void test('BigIntType behavior investigation', () => {
     const buffer = BigIntType.toBuffer(value);
     const restored = BigIntType.fromBuffer(buffer);
     log(
-      `Buffer round-trip: ${value} -> ${buffer.toString('hex')} -> ${restored}`
+      `Buffer round-trip: ${value} -> ${Buffer.from(buffer).toString('hex')} -> ${restored}`
     );
     assert.strictEqual(
       restored,

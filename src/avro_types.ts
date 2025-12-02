@@ -54,9 +54,9 @@ export interface ManifestListRecord {
   sequence_number: bigint;
   min_sequence_number: bigint;
   added_snapshot_id: bigint;
-  added_data_files_count: number;
-  existing_data_files_count: number;
-  deleted_data_files_count: number;
+  added_files_count: number;
+  existing_files_count: number;
+  deleted_files_count: number;
   added_rows_count: bigint;
   existing_rows_count: bigint;
   deleted_rows_count: bigint;
@@ -65,7 +65,9 @@ export interface ManifestListRecord {
 export type AvroPrimitiveType = 'string' | 'int' | 'long' | 'double' | 'bytes';
 
 export const BigIntType = avsc.types.LongType.__with({
-  fromBuffer: (buf: Buffer) => buf.readBigInt64LE(),
+  fromBuffer(uint_array: Buffer | Uint8Array) {
+    return Buffer.from(uint_array).readBigInt64LE();
+  },
   toBuffer(n: bigint) {
     const buf = Buffer.alloc(8);
     buf.writeBigInt64LE(n);
