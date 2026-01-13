@@ -67,8 +67,11 @@ export async function queryRows<T = Record<string, unknown>>(
       return obj as T;
     });
   }
-  const errorReason = result?.QueryExecution?.Status?.StateChangeReason ?? 'Unknown';
-  assert.fail(`Athena query failed with status: ${status}. Reason: ${errorReason}`);
+  const errorReason =
+    result?.QueryExecution?.Status?.StateChangeReason ?? 'Unknown';
+  assert.fail(
+    `Athena query failed with status: ${status}. Reason: ${errorReason}`
+  );
 }
 
 export async function executeQuery(namespace: string, sql: string) {
@@ -105,6 +108,9 @@ export async function executeQuery(namespace: string, sql: string) {
     );
     return queryResults;
   }
-  const errorReason = result?.QueryExecution?.Status?.StateChangeReason ?? 'Unknown';
-  assert.fail(`Athena query failed with status: ${status}. Reason: ${errorReason}`);
+  const errorReason =
+    result?.QueryExecution?.Status?.StateChangeReason ?? 'Unknown';
+  assert.fail(
+    `Athena query failed with status: ${status}. Reason: ${errorReason}`
+  );
 }

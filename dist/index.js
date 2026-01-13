@@ -622,6 +622,13 @@ const ManifestListType = avsc__namespace.Type.forSchema({
             default: null,
             'field-id': 507,
         },
+        {
+            name: 'key_metadata',
+            type: ['null', 'bytes'],
+            doc: 'Encryption key metadata blob',
+            default: null,
+            'field-id': 519,
+        },
     ],
 }, { registry: { ...AvroRegistry } });
 

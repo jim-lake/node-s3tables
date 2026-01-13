@@ -27,6 +27,7 @@ interface ManifestListRecord {
     existing_rows_count: bigint;
     deleted_rows_count: bigint;
     partitions?: PartitionSummary[] | null;
+    key_metadata?: Buffer | null;
 }
 
 type IcebergTransform = 'identity' | 'year' | 'month' | 'day' | 'hour' | `bucket[${number}]` | `truncate[${number}]`;
