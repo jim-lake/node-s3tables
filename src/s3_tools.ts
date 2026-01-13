@@ -11,6 +11,7 @@ import * as zlib from 'node:zlib';
 
 import { fixupMetadata } from './avro_helper';
 import { ManifestListType } from './avro_schema';
+import { AvroRegistry } from './avro_types';
 
 import type { Readable } from 'node:stream';
 import type { AwsCredentialIdentity } from '@aws-sdk/types';
@@ -123,7 +124,11 @@ export async function updateManifestList(params: UpdateManifestListParams) {
   const passthrough = new PassThrough();
   const decoder = new avsc.streams.BlockDecoder({
     codecs: { deflate: zlib.inflateRaw },
-    parseHook: () => ManifestListType,
+    parseHook(schema) {
+      return avsc.Type.forSchema(schema as unknown as avsc.Schema, {
+        registry: { ...AvroRegistry },
+      });
+    },
   });
   const encoder = new avsc.streams.BlockEncoder(ManifestListType, {
     codec: 'deflate',

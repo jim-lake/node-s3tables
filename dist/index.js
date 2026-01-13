@@ -848,7 +848,11 @@ async function updateManifestList(params) {
     const passthrough = new node_stream.PassThrough();
     const decoder = new avsc__namespace.streams.BlockDecoder({
         codecs: { deflate: zlib__namespace.inflateRaw },
-        parseHook: () => ManifestListType,
+        parseHook(schema) {
+            return avsc__namespace.Type.forSchema(schema, {
+                registry: { ...AvroRegistry },
+            });
+        },
     });
     const encoder = new avsc__namespace.streams.BlockEncoder(ManifestListType, {
         codec: 'deflate',
