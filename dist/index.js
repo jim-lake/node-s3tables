@@ -864,14 +864,28 @@ async function updateManifestList(params) {
         params: { Bucket: bucket, Key: outKey, Body: passthrough },
     });
     const stream_promise = new Promise((resolve, reject) => {
-        decoder.on('error', reject);
+        source.on('error', (err) => {
+            reject(err);
+        });
+        passthrough.on('error', (err) => {
+            reject(err);
+        });
+        encoder.on('error', (err) => {
+            reject(err);
+        });
+        decoder.on('error', (err) => {
+            reject(err);
+        });
         decoder.on('data', (record) => {
-            encoder.write(record);
+            if (!encoder.write(record)) {
+                decoder.pause();
+                encoder.once('drain', () => decoder.resume());
+            }
         });
         decoder.on('end', () => {
             encoder.end();
         });
-        decoder.on('finish', () => {
+        encoder.on('finish', () => {
             resolve();
         });
         source.pipe(decoder);

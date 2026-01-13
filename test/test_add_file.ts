@@ -3,8 +3,8 @@ import { createPartitionedParquetFile } from './helpers/parquet_helper';
 
 import { getMetadata, addDataFiles } from '../src';
 
-const namespace = process.argv[2];
-const name = process.argv[3];
+const namespace = process.argv[2] ?? '';
+const name = process.argv[3] ?? '';
 
 if (!namespace || !name) {
   console.log('Usage:', process.argv[1], '<namespace> <name>');
