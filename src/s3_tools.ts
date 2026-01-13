@@ -12,6 +12,7 @@ import * as zlib from 'node:zlib';
 import { fixupMetadata } from './avro_helper';
 import { ManifestListType } from './avro_schema';
 import { AvroRegistry } from './avro_types';
+import { translateRecord } from './schema_translator';
 
 import type { Readable } from 'node:stream';
 import type { AwsCredentialIdentity } from '@aws-sdk/types';
@@ -122,9 +123,11 @@ export async function updateManifestList(params: UpdateManifestListParams) {
     throw new Error('failed to get source manifest list');
   }
   const passthrough = new PassThrough();
+  let sourceSchema: unknown;
   const decoder = new avsc.streams.BlockDecoder({
     codecs: { deflate: zlib.inflateRaw },
     parseHook(schema) {
+      sourceSchema = schema;
       return avsc.Type.forSchema(schema as unknown as avsc.Schema, {
         registry: { ...AvroRegistry },
       });
@@ -157,7 +160,12 @@ export async function updateManifestList(params: UpdateManifestListParams) {
       reject(err);
     });
     decoder.on('data', (record: unknown) => {
-      if (!encoder.write(record)) {
+      const translated = translateRecord(
+        sourceSchema,
+        ManifestListType.schema(),
+        record
+      );
+      if (!encoder.write(translated)) {
         decoder.pause();
         encoder.once('drain', () => decoder.resume());
       }

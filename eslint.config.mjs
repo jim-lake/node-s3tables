@@ -19,6 +19,7 @@ export default tseslint.config(
       },
     },
     rules: {
+      'function-paren-newline': 'off',
       '@typescript-eslint/no-misused-spread': ['error', { allow: ['Error'] }],
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/no-unsafe-assignment': 'error',
@@ -290,7 +291,6 @@ export default tseslint.config(
       'func-names': ['error', 'always'],
       'func-style': ['error', 'declaration', { allowArrowFunctions: false }],
       'function-call-argument-newline': ['error', 'consistent'],
-      'function-paren-newline': ['error', 'consistent'],
       'key-spacing': [
         'error',
         { beforeColon: false, afterColon: true, mode: 'strict' },
