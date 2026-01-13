@@ -1,20 +1,17 @@
-import { test } from './helpers/test_helper';
-import { inspect } from 'node:util';
 import { config } from './helpers/aws_clients';
-import { queryRows } from './helpers/athena_helper';
 import { createPartitionedParquetFile } from './helpers/parquet_helper';
 
-import { getMetadata, addPartitionSpec, addDataFiles } from '../src';
+import { getMetadata, addDataFiles } from '../src';
 
-const namespace = process.argv[2]
+const namespace = process.argv[2];
 const name = process.argv[3];
 
 if (!namespace || !name) {
-  console.log("Usage:", process.argv[1], "<namespace> <name>");
+  console.log('Usage:', process.argv[1], '<namespace> <name>');
   process.exit(-1);
 }
 
-main();
+await main();
 async function main() {
   const metadata = await getMetadata({
     tableBucketARN: config.tableBucketARN,
@@ -47,10 +44,7 @@ async function main() {
         files: [
           {
             file: `s3://${tableBucket}/${files[0].key}`,
-            partitions: {
-              app_name: 'app1',
-              event_datetime_day: '2024-01-01',
-            },
+            partitions: { app_name: 'app1', event_datetime_day: '2024-01-01' },
             recordCount: 10n,
             fileSize: BigInt(files[0].size),
           },

@@ -27,7 +27,9 @@ export async function setupTable(
 
   t.after(async () => {
     log('afterAll: cleanup:', namespace, name);
-    // if (name) { return; }
+    if (name) {
+      return;
+    }
     try {
       if (name) {
         await clients.s3Tables.send(
