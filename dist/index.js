@@ -783,6 +783,149 @@ function makeBounds(partitions, spec, schema) {
     });
 }
 
+function isRawRecordSchema(schema) {
+    return (typeof schema === 'object' &&
+        schema !== null &&
+        'type' in schema &&
+        schema.type === 'record' &&
+        'fields' in schema);
+}
+function isRawArraySchema(schema) {
+    return (typeof schema === 'object' &&
+        schema !== null &&
+        'type' in schema &&
+        schema.type === 'array');
+}
+function isRawMapSchema(schema) {
+    return (typeof schema === 'object' &&
+        schema !== null &&
+        'type' in schema &&
+        schema.type === 'map');
+}
+function isRawUnionSchema(schema) {
+    return Array.isArray(schema);
+}
+function translateRecord(sourceSchema, targetSchema, record) {
+    return translateValue(sourceSchema, targetSchema, record);
+}
+function translateValue(sourceSchema, targetSchema, value) {
+    if (value === null || value === undefined) {
+        return value;
+    }
+    // Handle unions
+    if (isRawUnionSchema(targetSchema)) {
+        for (const targetBranch of targetSchema) {
+            if (isRawUnionSchema(sourceSchema)) {
+                for (const sourceBranch of sourceSchema) {
+                    try {
+                        return translateValue(sourceBranch, targetBranch, value);
+                    }
+                    catch {
+                        // Try next branch
+                    }
+                }
+            }
+            else {
+                try {
+                    return translateValue(sourceSchema, targetBranch, value);
+                }
+                catch {
+                    // Try next branch
+                }
+            }
+        }
+        return value;
+    }
+    if (isRawUnionSchema(sourceSchema)) {
+        for (const sourceBranch of sourceSchema) {
+            try {
+                return translateValue(sourceBranch, targetSchema, value);
+            }
+            catch {
+                // Try next branch
+            }
+        }
+    }
+    // Handle primitives
+    if (typeof sourceSchema === 'string' && typeof targetSchema === 'string') {
+        return value;
+    }
+    // Handle records
+    if (isRawRecordSchema(sourceSchema) && isRawRecordSchema(targetSchema)) {
+        return translateRecordValue(sourceSchema, targetSchema, value);
+    }
+    // Handle arrays
+    if (isRawArraySchema(sourceSchema) && isRawArraySchema(targetSchema)) {
+        if (!Array.isArray(value)) {
+            return value;
+        }
+        return value.map((item) => translateValue(sourceSchema.items, targetSchema.items, item));
+    }
+    // Handle maps
+    if (isRawMapSchema(sourceSchema) && isRawMapSchema(targetSchema)) {
+        if (typeof value !== 'object') {
+            return value;
+        }
+        const result = {};
+        for (const [key, val] of Object.entries(value)) {
+            result[key] = translateValue(sourceSchema.values, targetSchema.values, val);
+        }
+        return result;
+    }
+    return value;
+}
+function translateRecordValue(sourceSchema, targetSchema, record) {
+    if (typeof record !== 'object' || record === null) {
+        return record;
+    }
+    const sourceRecord = record;
+    const result = {};
+    // Build field maps from source
+    const sourceFieldById = new Map();
+    const sourceFieldByName = new Map();
+    for (const field of sourceSchema.fields) {
+        if (field['field-id'] !== undefined) {
+            sourceFieldById.set(field['field-id'], field);
+        }
+        sourceFieldByName.set(field.name, field);
+    }
+    // Translate each target field
+    for (const targetField of targetSchema.fields) {
+        let sourceField;
+        let sourceValue;
+        // Match by field-id first
+        if (targetField['field-id'] !== undefined) {
+            sourceField = sourceFieldById.get(targetField['field-id']);
+            if (sourceField) {
+                sourceValue = sourceRecord[sourceField.name];
+            }
+        }
+        // Fall back to name match
+        if (sourceField === undefined) {
+            sourceField = sourceFieldByName.get(targetField.name);
+            if (sourceField) {
+                sourceValue = sourceRecord[sourceField.name];
+            }
+        }
+        // Handle missing source field or value
+        if (sourceField === undefined) {
+            if ('default' in targetField) {
+                result[targetField.name] = targetField.default;
+            }
+        }
+        else if (sourceValue === undefined) {
+            if ('default' in targetField) {
+                result[targetField.name] = targetField.default;
+            }
+        }
+        else {
+            // Translate the value
+            result[targetField.name] = translateValue(sourceField.type, targetField.type, sourceValue);
+        }
+    }
+    return result;
+}
+
 const S3_REGEX = /^s3:\/\/([^/]+)\/(.+)$/;
 function parseS3Url(url) {
     const match = S3_REGEX.exec(url);
@@ -853,9 +996,11 @@ async function updateManifestList(params) {
         throw new Error('failed to get source manifest list');
     }
     const passthrough = new node_stream.PassThrough();
+    let sourceSchema;
     const decoder = new avsc__namespace.streams.BlockDecoder({
         codecs: { deflate: zlib__namespace.inflateRaw },
         parseHook(schema) {
+            sourceSchema = schema;
             return avsc__namespace.Type.forSchema(schema, {
                 registry: { ...AvroRegistry },
             });
@@ -888,7 +1033,8 @@ async function updateManifestList(params) {
             reject(err);
         });
         decoder.on('data', (record) => {
-            if (!encoder.write(record)) {
+            const translated = translateRecord(sourceSchema, ManifestListType.schema(), record);
+            if (!encoder.write(translated)) {
                 decoder.pause();
                 encoder.once('drain', () => decoder.resume());
             }
