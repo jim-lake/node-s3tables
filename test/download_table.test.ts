@@ -4,8 +4,8 @@ import { strict as assert } from 'node:assert';
 import { config } from './helpers/aws_clients';
 import { setupTable } from './helpers/table_lifecycle';
 import { createPartitionedParquetFile } from './helpers/parquet_helper';
-import { access, readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { access, readFile, mkdir } from 'node:fs/promises';
+import { join, basename } from 'node:path';
 
 import { getMetadata, addPartitionSpec, addDataFiles } from '../src';
 import { downloadTable } from './download_table';
@@ -145,7 +145,8 @@ void test('download table test', async (t) => {
   });
 
   await t.test('download table', async () => {
-    const outputDir = '/tmp/download-test';
+    const outputDir = `/tmp/download-test-${Date.now()}`;
+    await mkdir(outputDir, { recursive: true });
     await downloadTable({
       tableBucketARN: config.tableBucketARN,
       namespace,
@@ -169,7 +170,7 @@ void test('download table test', async (t) => {
     for (const snapshot of metadata.snapshots) {
       const manifestListUrl = snapshot['manifest-list'];
       const manifestListKey = manifestListUrl.split('/').slice(3).join('/');
-      const manifestListPath = join(outputDir, manifestListKey);
+      const manifestListPath = join(outputDir, basename(manifestListKey));
       await access(manifestListPath);
       manifestListCount++;
       log('Verified manifest list:', manifestListPath);

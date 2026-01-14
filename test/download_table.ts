@@ -72,7 +72,7 @@ export async function downloadTable(
     }
 
     /* Download manifest list */
-    const mlPath = join(outputDir, mlKey);
+    const mlPath = join(outputDir, mlKey.split('/').pop() ?? mlKey);
     const mlCmd = new GetObjectCommand({ Bucket: mlBucket, Key: mlKey });
     const mlResponse = await s3Client.send(mlCmd);
     const mlBody = await mlResponse.Body?.transformToByteArray();
@@ -90,7 +90,7 @@ export async function downloadTable(
       if (!mKey) {
         throw new Error('invalid manifest key');
       }
-      const mPath = join(outputDir, mKey);
+      const mPath = join(outputDir, mKey.split('/').pop() ?? mKey);
       const mCmd = new GetObjectCommand({ Bucket: mBucket, Key: mKey });
       const mResponse = await s3Client.send(mCmd);
       const mBody = await mResponse.Body?.transformToByteArray();
