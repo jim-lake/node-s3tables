@@ -1,8 +1,9 @@
 import { GetObjectCommand } from '@aws-sdk/client-s3';
-import { writeFile, mkdir } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import * as avsc from 'avsc';
 import * as zlib from 'node:zlib';
+import { Readable } from 'node:stream';
 
 import { getS3Client, parseS3Url } from '../src/s3_tools';
 import { getMetadata } from '../src/metadata';
@@ -51,12 +52,11 @@ export async function downloadTable(
     params.tableBucketARN?.split(':')[3] ??
     params.tableArn?.split(':')[3] ??
     region ??
-    'us-east-1';
+    '';
   const s3Client = getS3Client({ region: tableRegion, credentials });
 
   /* Save metadata.json */
   const metadataPath = join(outputDir, 'metadata.json');
-  await mkdir(dirname(metadataPath), { recursive: true });
   const metadataStr = stringify(metadata);
   if (!metadataStr) {
     throw new Error('failed to stringify metadata');
@@ -73,7 +73,6 @@ export async function downloadTable(
 
     /* Download manifest list */
     const mlPath = join(outputDir, mlKey);
-    await mkdir(dirname(mlPath), { recursive: true });
     const mlCmd = new GetObjectCommand({ Bucket: mlBucket, Key: mlKey });
     const mlResponse = await s3Client.send(mlCmd);
     const mlBody = await mlResponse.Body?.transformToByteArray();
@@ -83,7 +82,7 @@ export async function downloadTable(
     await writeFile(mlPath, Buffer.from(mlBody));
 
     /* Parse manifest list to get manifest paths */
-    const manifestPaths = await parseManifestList(Buffer.from(mlBody));
+    const manifestPaths = await _parseManifestList(Buffer.from(mlBody));
 
     /* Download each manifest */
     for (const manifestPath of manifestPaths) {
@@ -92,7 +91,6 @@ export async function downloadTable(
         throw new Error('invalid manifest key');
       }
       const mPath = join(outputDir, mKey);
-      await mkdir(dirname(mPath), { recursive: true });
       const mCmd = new GetObjectCommand({ Bucket: mBucket, Key: mKey });
       const mResponse = await s3Client.send(mCmd);
       const mBody = await mResponse.Body?.transformToByteArray();
@@ -103,8 +101,7 @@ export async function downloadTable(
     }
   }
 }
-
-async function parseManifestList(buffer: Buffer): Promise<string[]> {
+async function _parseManifestList(buffer: Buffer): Promise<string[]> {
   return new Promise((resolve, reject) => {
     const paths: string[] = [];
     const decoder = new avsc.streams.BlockDecoder({
@@ -122,8 +119,23 @@ async function parseManifestList(buffer: Buffer): Promise<string[]> {
     });
     decoder.on('error', reject);
 
-    /* eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires */
-    const { Readable } = require('node:stream') as typeof import('node:stream');
     Readable.from(buffer).pipe(decoder);
   });
+}
+
+if (require.main === module) {
+  const tableBucketARN = process.argv[2];
+  const namespace = process.argv[3];
+  const name = process.argv[4];
+  const outputDir = process.argv[5];
+  if (!tableBucketARN || !namespace || !name || !outputDir) {
+    console.log(
+      'Usage:',
+      process.argv[1],
+      '<tableBucketARN> <namespace> <name> <outputDir>'
+    );
+    process.exit(-1);
+  } else {
+    void downloadTable({ tableBucketARN, namespace, name, outputDir });
+  }
 }
