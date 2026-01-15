@@ -4,7 +4,7 @@ import { strict as assert } from 'node:assert';
 import { config } from './helpers/aws_clients';
 import { setupTable } from './helpers/table_lifecycle';
 import { createPartitionedParquetFile } from './helpers/parquet_helper';
-import { access, readFile, mkdir } from 'node:fs/promises';
+import { access, readFile, mkdir, readdir } from 'node:fs/promises';
 import { join, basename } from 'node:path';
 
 import { getMetadata, addPartitionSpec, addDataFiles } from '../src';
@@ -184,5 +184,22 @@ void test('download table test', async (t) => {
       2,
       'should have downloaded 2 manifest lists'
     );
+
+    /* Verify parquet files exist */
+    const files = await readdir(outputDir);
+    const parquetFiles = files.filter((f) => f.endsWith('.parquet'));
+    log(`Found ${parquetFiles.length} parquet files:`, parquetFiles);
+    assert.strictEqual(
+      parquetFiles.length,
+      3,
+      'should have downloaded 3 parquet files'
+    );
+    for (const parquetFile of parquetFiles) {
+      const parquetPath = join(outputDir, parquetFile);
+      await access(parquetPath);
+      const stats = await readFile(parquetPath);
+      assert(stats.length > 0, `${parquetFile} should not be empty`);
+    }
+    log(`Verified ${parquetFiles.length} parquet files`);
   });
 });

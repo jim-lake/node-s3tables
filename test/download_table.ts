@@ -98,6 +98,25 @@ export async function downloadTable(
         throw new Error('missing manifest body');
       }
       await writeFile(mPath, Buffer.from(mBody));
+
+      /* Parse manifest to get data file paths */
+      const dataFilePaths = await _parseManifest(Buffer.from(mBody));
+
+      /* Download each parquet file */
+      for (const dataFilePath of dataFilePaths) {
+        const { bucket: dBucket, key: dKey } = parseS3Url(dataFilePath);
+        if (!dKey) {
+          throw new Error('invalid data file key');
+        }
+        const dPath = join(outputDir, dKey.split('/').pop() ?? dKey);
+        const dCmd = new GetObjectCommand({ Bucket: dBucket, Key: dKey });
+        const dResponse = await s3Client.send(dCmd);
+        const dBody = await dResponse.Body?.transformToByteArray();
+        if (!dBody) {
+          throw new Error('missing data file body');
+        }
+        await writeFile(dPath, Buffer.from(dBody));
+      }
     }
   }
 }
@@ -113,6 +132,28 @@ async function _parseManifestList(buffer: Buffer): Promise<string[]> {
 
     decoder.on('data', (record: { manifest_path: string }) => {
       paths.push(record.manifest_path);
+    });
+    decoder.on('end', () => {
+      resolve(paths);
+    });
+    decoder.on('error', reject);
+
+    Readable.from(buffer).pipe(decoder);
+  });
+}
+
+async function _parseManifest(buffer: Buffer): Promise<string[]> {
+  return new Promise((resolve, reject) => {
+    const paths: string[] = [];
+    const decoder = new avsc.streams.BlockDecoder({
+      codecs: { deflate: zlib.inflateRaw },
+      parseHook(schema) {
+        return avsc.Type.forSchema(schema, { registry: { ...AvroRegistry } });
+      },
+    });
+
+    decoder.on('data', (record: { data_file: { file_path: string } }) => {
+      paths.push(record.data_file.file_path);
     });
     decoder.on('end', () => {
       resolve(paths);
