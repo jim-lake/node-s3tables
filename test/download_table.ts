@@ -54,6 +54,7 @@ export async function downloadTable(
     region ??
     '';
   const s3Client = getS3Client({ region: tableRegion, credentials });
+  const doneFileSet = new Set<string>();
 
   /* Save metadata.json */
   const metadataPath = join(outputDir, 'metadata.json');
@@ -62,6 +63,7 @@ export async function downloadTable(
     throw new Error('failed to stringify metadata');
   }
   await writeFile(metadataPath, metadataStr);
+  console.log('downloaded metadata:', metadataPath);
 
   /* Download all manifest lists and their manifests */
   for (const snapshot of metadata.snapshots) {
@@ -73,49 +75,62 @@ export async function downloadTable(
 
     /* Download manifest list */
     const mlPath = join(outputDir, mlKey.split('/').pop() ?? mlKey);
-    const mlCmd = new GetObjectCommand({ Bucket: mlBucket, Key: mlKey });
-    const mlResponse = await s3Client.send(mlCmd);
-    const mlBody = await mlResponse.Body?.transformToByteArray();
-    if (!mlBody) {
-      throw new Error('missing manifest list body');
-    }
-    await writeFile(mlPath, Buffer.from(mlBody));
-
-    /* Parse manifest list to get manifest paths */
-    const manifestPaths = await _parseManifestList(Buffer.from(mlBody));
-
-    /* Download each manifest */
-    for (const manifestPath of manifestPaths) {
-      const { bucket: mBucket, key: mKey } = parseS3Url(manifestPath);
-      if (!mKey) {
-        throw new Error('invalid manifest key');
+    if (!doneFileSet.has(mlPath)) {
+      doneFileSet.add(mlPath);
+      const mlCmd = new GetObjectCommand({ Bucket: mlBucket, Key: mlKey });
+      const mlResponse = await s3Client.send(mlCmd);
+      const mlBody = await mlResponse.Body?.transformToByteArray();
+      if (!mlBody) {
+        throw new Error('missing manifest list body');
       }
-      const mPath = join(outputDir, mKey.split('/').pop() ?? mKey);
-      const mCmd = new GetObjectCommand({ Bucket: mBucket, Key: mKey });
-      const mResponse = await s3Client.send(mCmd);
-      const mBody = await mResponse.Body?.transformToByteArray();
-      if (!mBody) {
-        throw new Error('missing manifest body');
-      }
-      await writeFile(mPath, Buffer.from(mBody));
+      await writeFile(mlPath, Buffer.from(mlBody));
+      console.log('downloaded manfiest list:', mlPath);
+      console.log('');
 
-      /* Parse manifest to get data file paths */
-      const dataFilePaths = await _parseManifest(Buffer.from(mBody));
+      /* Parse manifest list to get manifest paths */
+      const manifestPaths = await _parseManifestList(Buffer.from(mlBody));
 
-      /* Download each parquet file */
-      for (const dataFilePath of dataFilePaths) {
-        const { bucket: dBucket, key: dKey } = parseS3Url(dataFilePath);
-        if (!dKey) {
-          throw new Error('invalid data file key');
+      /* Download each manifest */
+      for (const manifestPath of manifestPaths) {
+        const { bucket: mBucket, key: mKey } = parseS3Url(manifestPath);
+        if (!mKey) {
+          throw new Error('invalid manifest key');
         }
-        const dPath = join(outputDir, dKey.split('/').pop() ?? dKey);
-        const dCmd = new GetObjectCommand({ Bucket: dBucket, Key: dKey });
-        const dResponse = await s3Client.send(dCmd);
-        const dBody = await dResponse.Body?.transformToByteArray();
-        if (!dBody) {
-          throw new Error('missing data file body');
+        const mPath = join(outputDir, mKey.split('/').pop() ?? mKey);
+        if (!doneFileSet.has(mPath)) {
+          doneFileSet.add(mPath);
+          const mCmd = new GetObjectCommand({ Bucket: mBucket, Key: mKey });
+          const mResponse = await s3Client.send(mCmd);
+          const mBody = await mResponse.Body?.transformToByteArray();
+          if (!mBody) {
+            throw new Error('missing manifest body');
+          }
+          await writeFile(mPath, Buffer.from(mBody));
+          console.log('downloaded manfiest:', mPath);
+          console.log('');
+
+          /* Parse manifest to get data file paths */
+          const dataFilePaths = await _parseManifest(Buffer.from(mBody));
+
+          for (const dataFilePath of dataFilePaths) {
+            const { bucket: dBucket, key: dKey } = parseS3Url(dataFilePath);
+            if (!dKey) {
+              throw new Error('invalid data file key');
+            }
+            const dPath = join(outputDir, dKey.split('/').pop() ?? dKey);
+            if (!doneFileSet.has(dPath)) {
+              doneFileSet.add(dPath);
+              const dCmd = new GetObjectCommand({ Bucket: dBucket, Key: dKey });
+              const dResponse = await s3Client.send(dCmd);
+              const dBody = await dResponse.Body?.transformToByteArray();
+              if (!dBody) {
+                throw new Error('missing data file body');
+              }
+              await writeFile(dPath, Buffer.from(dBody));
+              console.log('downloaded data:', dKey.split('/').pop() ?? dKey);
+            }
+          }
         }
-        await writeFile(dPath, Buffer.from(dBody));
       }
     }
   }

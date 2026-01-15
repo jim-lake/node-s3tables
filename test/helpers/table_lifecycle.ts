@@ -26,10 +26,11 @@ export async function setupTable(
   const name = tableName;
 
   t.after(async () => {
-    log('afterAll: cleanup:', namespace, name);
-    if (name) {
+    if (process.env['NO_CLEANUP']) {
+      log('afterAll: skip cleanup:', namespace, name);
       return;
     }
+    log('afterAll: cleanup:', namespace, name);
     try {
       if (name) {
         await clients.s3Tables.send(
