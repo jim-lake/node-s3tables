@@ -20,7 +20,7 @@ export async function setupTable(
   t: TestContext,
   namePrefix: string,
   tableName: string,
-  schema: { name: string; type: string; required: boolean }[]
+  schema: { id?: number; name: string; type: string; required: boolean }[]
 ): Promise<TableSetup> {
   const namespace = `${namePrefix}_${Math.floor(Math.random() * 10000)}`;
   const name = tableName;

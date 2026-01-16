@@ -2,7 +2,12 @@
 
 declare module 'parquetjs' {
   export class ParquetSchema {
-    constructor(schema: Record<string, { type: string }>);
+    constructor(
+      schema: Record<
+        string,
+        { type: string; compression?: string; optional?: boolean }
+      >
+    );
   }
 
   interface ParquetColumnMetadata {

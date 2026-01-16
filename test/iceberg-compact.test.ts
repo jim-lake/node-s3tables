@@ -61,7 +61,7 @@ void test('Iceberg Compact test', async (t) => {
     });
     log('Partition spec added:', result);
   });
-  let tableBucket: string;
+  let tableBucket = '';
   await t.test('get bucket', async () => {
     const metadata = await getMetadata({
       tableBucketARN: config.tableBucketARN,
@@ -74,15 +74,14 @@ void test('Iceberg Compact test', async (t) => {
 
   let batch_num = 1;
   for (const batch of BATCHES.slice(0, BATCH_LIMIT)) {
-    await t.test(`batch: ${batch_num++}`, async () => {
+    const batchNum = batch_num++;
+    const bucket = tableBucket;
+    await t.test(`batch: ${batchNum}`, async () => {
       const files = [];
       for (const file of batch) {
-        const { key, size, partitions } = await _writeParquetFile(
-          tableBucket,
-          file
-        );
+        const { key, size, partitions } = await _writeParquetFile(bucket, file);
         files.push({
-          file: `s3://${tableBucket}/${key}`,
+          file: `s3://${bucket}/${key}`,
           partitions,
           recordCount: BigInt(file.length),
           fileSize: BigInt(size),
@@ -101,12 +100,23 @@ void test('Iceberg Compact test', async (t) => {
   }
 });
 
+interface LogRecord {
+  app: string;
+  ingest_datetime: number;
+  [key: string]: string | number | null;
+}
+
 async function _writeParquetFile(
   tableBucket: string,
-  list: unknown[]
-): Promise<{ key: string; size: number; partitions: any }> {
-  const app = list[0].app;
-  const date = new Date(list[0].ingest_datetime / 1000);
+  list: LogRecord[]
+): Promise<{ key: string; size: number; partitions: Record<string, string> }> {
+  const firstRow = list[0];
+  if (!firstRow) {
+    throw new Error('Empty list');
+  }
+  const app = firstRow.app;
+  const ingestDatetime = firstRow.ingest_datetime;
+  const date = new Date(ingestDatetime / 1000);
   const dateParts = date.toISOString().split('T');
   const ingest_date = dateParts[0];
   if (!ingest_date) {
