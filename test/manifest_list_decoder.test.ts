@@ -5,6 +5,8 @@ import * as path from 'node:path';
 import * as zlib from 'node:zlib';
 import { ManifestListType } from '../src/avro_schema';
 import { BigIntType } from '../src/avro_types';
+import { log } from './helpers/log_helper';
+
 import type { ManifestListRecord } from '../src/avro_types';
 
 void describe('Manifest List Decoder', () => {
@@ -40,7 +42,7 @@ void describe('Manifest List Decoder', () => {
     });
 
     assert.ok(records.length > 0, 'Should have decoded at least one record');
-    console.log(`Decoded ${records.length} records`);
+    log(`Decoded ${records.length} records`);
 
     // Verify all records have the expected structure
     for (const record of records) {
@@ -62,7 +64,7 @@ void describe('Manifest List Decoder', () => {
     // Read the file schema
     const decoder = avsc.createFileDecoder(filePath, {
       parseHook(schema: avsc.Schema) {
-        console.log('File schema:', JSON.stringify(schema, null, 2));
+        log('File schema:', JSON.stringify(schema, null, 2));
         return avsc.Type.forSchema(schema, { registry: { long: BigIntType } });
       },
       codecs: {

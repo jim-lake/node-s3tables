@@ -37,7 +37,7 @@ void test('Iceberg Compact test', async (t) => {
     { id: 19, name: 'language', required: false, type: 'string' },
     { id: 20, name: 'log_line', required: true, type: 'string' },
   ]);
-  console.log('namespace:', namespace, 'name:', name);
+  log('namespace:', namespace, 'name:', name);
   await t.test('add partition spec', async () => {
     const result = await addPartitionSpec({
       tableBucketARN: config.tableBucketARN,
