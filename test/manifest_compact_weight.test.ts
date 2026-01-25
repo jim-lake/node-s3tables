@@ -6,7 +6,8 @@ import { setupTable } from './helpers/table_lifecycle';
 import { createPartitionedParquetFile } from './helpers/parquet_helper';
 
 import { getMetadata, addPartitionSpec, addDataFiles } from '../src';
-import { manifestCompact, type ManifestListRecord } from '../src/manifest_compact';
+import { manifestCompact } from '../src';
+import type { ManifestListRecord } from '../src';
 
 void test('manifest compact with targetCount and calculateWeight', async (t) => {
   const { namespace, name } = await setupTable(
@@ -83,9 +84,9 @@ void test('manifest compact with targetCount and calculateWeight', async (t) => 
   });
 
   await t.test('compact with targetCount limits output manifests', async () => {
-    const calculateWeight = (group: ManifestListRecord[]) => {
+    function calculateWeight(group: ManifestListRecord[]) {
       return group.reduce((sum, r) => sum + Number(r.added_rows_count), 0);
-    };
+    }
 
     const result = await manifestCompact({
       tableBucketARN: config.tableBucketARN,

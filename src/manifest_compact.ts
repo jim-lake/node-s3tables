@@ -375,18 +375,36 @@ function _combineWeightGroups(
   targetCount: number,
   calculateWeight: CalculateWeightFunction
 ): ManifestListRecord[][] {
+  interface WeightedGroup {
+    group: ManifestListRecord[];
+    weight: number;
+  }
   const weighted_groups = groups.map((group) => ({
     group,
     weight: calculateWeight(group),
   }));
   weighted_groups.sort(_sortGroup);
   while (weighted_groups.length > targetCount) {
-    const remove_item = weighted_groups.shift();
-    if (!remove_item) {
+    let remove_item: WeightedGroup | undefined;
+    let merge_item: WeightedGroup | undefined;
+    for (let i = 0; i < weighted_groups.length; i++) {
+      const check_item = weighted_groups[i];
+      const partition_spec_id = check_item?.group[0]?.partition_spec_id;
+      if (partition_spec_id !== undefined) {
+        for (let j = i + 1; j < weighted_groups.length; j++) {
+          merge_item = weighted_groups[j];
+          if (merge_item?.group[0]?.partition_spec_id === partition_spec_id) {
+            remove_item = weighted_groups.splice(i, 1)[0];
+            break;
+          }
+        }
+      }
+    }
+    if (!remove_item || !merge_item) {
       break;
     }
     for (const item of remove_item.group) {
-      weighted_groups[0]?.group.push(item);
+      merge_item.group.push(item);
     }
   }
   return weighted_groups.map((g) => g.group);

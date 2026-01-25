@@ -24,6 +24,8 @@ export type * from './metadata';
 export type * from './snapshot';
 export type * from './iceberg';
 
+export type { ManifestListRecord } from './avro_types';
+
 export default {
   IcebergHttpError,
   getMetadata,
