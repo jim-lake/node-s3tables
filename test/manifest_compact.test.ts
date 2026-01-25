@@ -170,11 +170,7 @@ void test('manifest compact test', async (t) => {
   await t.test('verify table contents before compact', async () => {
     const rows = await queryRows(namespace, name);
     log('Row count before compact:', rows.length);
-    assert.strictEqual(
-      rows.length,
-      30,
-      `Expected 30 rows, got ${rows.length}`
-    );
+    assert.strictEqual(rows.length, 30, `Expected 30 rows, got ${rows.length}`);
   });
 
   await t.test('run compact', async () => {

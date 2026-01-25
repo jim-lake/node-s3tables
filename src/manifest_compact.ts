@@ -130,7 +130,10 @@ export async function manifestCompact(
       ? _combineWeightGroups(groups, targetCount, calculateWeight)
       : groups;
 
-  if (final_groups.length === list.length && !params.forceRewrite) {
+  if (
+    final_groups.length === 0 ||
+    (final_groups.length === list.length && !params.forceRewrite)
+  ) {
     return {
       result: {},
       retriesNeeded: 0,
@@ -229,8 +232,8 @@ async function _combineGroup(
     return group;
   }
   const key = `metadata/${randomUUID()}.avro`;
-  const schema = makeManifestSchema(params.spec, params.schemas);
-  const type = makeManifestType(params.spec, params.schemas);
+  const schema = makeManifestSchema(params.spec, params.schemas, true);
+  const type = makeManifestType(params.spec, params.schemas, true);
   const iter = asyncIterMap(group, async (record) => {
     return _streamReadManifest({
       credentials,
@@ -334,19 +337,20 @@ async function _streamReadManifest(
   if (!bucket || !key) {
     throw new Error(`invalid manfiest url: ${params.url}`);
   }
-  return downloadAvro<ManifestFileRecord>({
+  const results = await downloadAvro<ManifestFileRecord>({
     credentials: params.credentials,
     region: params.region,
     bucket,
     key,
     avroSchema: params.schema,
   });
+  return results;
 }
 function _filterDeletes(record: ManifestListRecord) {
   return (
-    record.content === ListContent.DATA &&
-    record.added_files_count === 0 &&
-    record.existing_files_count === 0
+    record.content !== ListContent.DATA ||
+    record.added_files_count > 0 ||
+    record.existing_files_count > 0
   );
 }
 function _groupList<T>(list: T[], compare: (a: T, b: T) => boolean): T[][] {

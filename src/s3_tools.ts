@@ -219,21 +219,27 @@ export async function streamWriteAvro<T>(
       file_size = progress.loaded;
     }
   });
-  const stream_promise = new Promise<void>((resolve, reject) => {
-    encoder.on('error', (err) => {
-      reject(err);
-    });
-    encoder.on('finish', () => {
-      resolve();
-    });
+  const upload_promise = upload.done();
+  let found_err: Error | undefined;
+  upload_promise.catch((err: unknown) => {
+    found_err = err as Error;
+  });
+  encoder.on('error', (err: Error) => {
+    found_err = err;
   });
   for await (const batch of params.iter) {
+    if (found_err) {
+      throw found_err;
+    }
     for (const record of batch) {
       encoder.write(record);
     }
   }
   encoder.end();
-  await Promise.all([stream_promise, upload.done()]);
+  await upload_promise;
+  if (found_err) {
+    throw found_err;
+  }
   return file_size;
 }
 export interface DownloadAvroParams {

@@ -72,13 +72,17 @@ export async function avroToBuffer(
 }
 export function icebergToAvroFields(
   spec: IcebergPartitionSpec,
-  schemas: IcebergSchema[]
+  schemas: IcebergSchema[],
+  skipPartitionLogicalType?: boolean
 ) {
-  return spec.fields.map((p) => _icebergToAvroField(p, schemas));
+  return spec.fields.map((p) =>
+    _icebergToAvroField(p, schemas, skipPartitionLogicalType)
+  );
 }
 function _icebergToAvroField(
   field: IcebergPartitionField,
-  schemas: IcebergSchema[]
+  schemas: IcebergSchema[],
+  skipPartitionLogicalType?: boolean
 ) {
   let source: IcebergSchemaField | undefined;
   for (const schema of schemas) {
@@ -123,6 +127,9 @@ function _icebergToAvroField(
         break;
       }
       throw new Error(`Unsupported transform: ${field.transform} for type`);
+  }
+  if (typeof avroType === 'object' && skipPartitionLogicalType) {
+    avroType = avroType.type;
   }
   return {
     name: field.name,

@@ -6,9 +6,14 @@ import type { IcebergPartitionSpec, IcebergSchema } from './iceberg';
 
 export function makeManifestSchema(
   spec: IcebergPartitionSpec,
-  schemas: IcebergSchema[]
+  schemas: IcebergSchema[],
+  skipPartitionLogicalType?: boolean
 ) {
-  const part_fields = icebergToAvroFields(spec, schemas);
+  const part_fields = icebergToAvroFields(
+    spec,
+    schemas,
+    skipPartitionLogicalType
+  );
   return {
     type: 'record',
     name: 'manifest_entry',
@@ -243,9 +248,11 @@ export function makeManifestSchema(
 }
 export function makeManifestType(
   spec: IcebergPartitionSpec,
-  schemas: IcebergSchema[]
+  schemas: IcebergSchema[],
+  skipPartitionLogicalType?: boolean
 ) {
-  return avsc.Type.forSchema(makeManifestSchema(spec, schemas), {
+  const schema = makeManifestSchema(spec, schemas, skipPartitionLogicalType);
+  return avsc.Type.forSchema(schema, {
     registry: { ...AvroRegistry },
     logicalTypes: AvroLogicalTypes,
   });
