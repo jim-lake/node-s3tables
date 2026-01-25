@@ -1952,7 +1952,11 @@ async function manifestCompact(params) {
         removeSnapshotId: remove_snapshot_id,
         retryCount: params.retryCount,
     });
-    return { ...snap_result, changed: true, outputManifestCount: groups.length };
+    return {
+        ...snap_result,
+        changed: true,
+        outputManifestCount: final_groups.length,
+    };
 }
 async function _combineGroup(params) {
     const { credentials, region, bucket, group } = params;

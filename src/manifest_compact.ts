@@ -203,7 +203,11 @@ export async function manifestCompact(
     removeSnapshotId: remove_snapshot_id,
     retryCount: params.retryCount,
   });
-  return { ...snap_result, changed: true, outputManifestCount: groups.length };
+  return {
+    ...snap_result,
+    changed: true,
+    outputManifestCount: final_groups.length,
+  };
 }
 interface CombineGroupParams {
   credentials?: AwsCredentialIdentity | undefined;
