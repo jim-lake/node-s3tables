@@ -84,10 +84,10 @@ async function avroToBuffer(params) {
         }
     });
 }
-function icebergToAvroFields(spec, schemas) {
-    return spec.fields.map((p) => _icebergToAvroField(p, schemas));
+function icebergToAvroFields(spec, schemas, skipPartitionLogicalType) {
+    return spec.fields.map((p) => _icebergToAvroField(p, schemas, skipPartitionLogicalType));
 }
-function _icebergToAvroField(field, schemas) {
+function _icebergToAvroField(field, schemas, skipPartitionLogicalType) {
     let source;
     for (const schema of schemas) {
         for (const f of schema.fields) {
@@ -130,6 +130,9 @@ function _icebergToAvroField(field, schemas) {
                 break;
             }
             throw new Error(`Unsupported transform: ${field.transform} for type`);
+    }
+    if (typeof avroType === 'object' && skipPartitionLogicalType) {
+        avroType = avroType.type;
     }
     return {
         name: field.name,
@@ -268,8 +271,8 @@ const AvroLogicalTypes = {
     hour: HourStringType,
 };
 
-function makeManifestSchema(spec, schemas) {
-    const part_fields = icebergToAvroFields(spec, schemas);
+function makeManifestSchema(spec, schemas, skipPartitionLogicalType) {
+    const part_fields = icebergToAvroFields(spec, schemas, skipPartitionLogicalType);
     return {
         type: 'record',
         name: 'manifest_entry',
@@ -502,8 +505,9 @@ function makeManifestSchema(spec, schemas) {
         ],
     };
 }
-function makeManifestType(spec, schemas) {
-    return avsc__namespace.Type.forSchema(makeManifestSchema(spec, schemas), {
+function makeManifestType(spec, schemas, skipPartitionLogicalType) {
+    const schema = makeManifestSchema(spec, schemas, skipPartitionLogicalType);
+    return avsc__namespace.Type.forSchema(schema, {
         registry: { ...AvroRegistry },
         logicalTypes: AvroLogicalTypes,
     });
@@ -1091,21 +1095,27 @@ async function streamWriteAvro(params) {
             file_size = progress.loaded;
         }
     });
-    const stream_promise = new Promise((resolve, reject) => {
-        encoder.on('error', (err) => {
-            reject(err);
-        });
-        encoder.on('finish', () => {
-            resolve();
-        });
+    const upload_promise = upload.done();
+    let found_err;
+    upload_promise.catch((err) => {
+        found_err = err;
+    });
+    encoder.on('error', (err) => {
+        found_err = err;
     });
     for await (const batch of params.iter) {
+        if (found_err) {
+            throw found_err;
+        }
         for (const record of batch) {
             encoder.write(record);
         }
     }
     encoder.end();
-    await Promise.all([stream_promise, upload.done()]);
+    await upload_promise;
+    if (found_err) {
+        throw found_err;
+    }
     return file_size;
 }
 async function downloadAvro(params) {
@@ -1882,7 +1892,8 @@ async function manifestCompact(params) {
         groups.length > targetCount
         ? _combineWeightGroups(groups, targetCount, calculateWeight)
         : groups;
-    if (final_groups.length === list.length && !params.forceRewrite) {
+    if (final_groups.length === 0 ||
+        (final_groups.length === list.length && !params.forceRewrite)) {
         return {
             result: {},
             retriesNeeded: 0,
@@ -1965,8 +1976,8 @@ async function _combineGroup(params) {
         return group;
     }
     const key = `metadata/${node_crypto.randomUUID()}.avro`;
-    const schema = makeManifestSchema(params.spec, params.schemas);
-    const type = makeManifestType(params.spec, params.schemas);
+    const schema = makeManifestSchema(params.spec, params.schemas, true);
+    const type = makeManifestType(params.spec, params.schemas, true);
     const iter = asyncIterMap(group, async (record) => {
         return _streamReadManifest({
             credentials,
@@ -2055,18 +2066,19 @@ async function _streamReadManifest(params) {
     if (!bucket || !key) {
         throw new Error(`invalid manfiest url: ${params.url}`);
     }
-    return downloadAvro({
+    const results = await downloadAvro({
         credentials: params.credentials,
         region: params.region,
         bucket,
         key,
         avroSchema: params.schema,
     });
+    return results;
 }
 function _filterDeletes(record) {
-    return (record.content === ListContent.DATA &&
-        record.added_files_count === 0 &&
-        record.existing_files_count === 0);
+    return (record.content !== ListContent.DATA ||
+        record.added_files_count > 0 ||
+        record.existing_files_count > 0);
 }
 function _groupList(list, compare) {
     const ret = [];
