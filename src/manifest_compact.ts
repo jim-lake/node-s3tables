@@ -34,8 +34,12 @@ export interface ManifestCompactParams {
 }
 export interface ManifestCompactResult extends SubmitSnapshotResult {
   changed: boolean;
+  inputManifestCount: number;
   outputManifestCount: number;
 }
+
+const ITER_LIMIT = 10;
+
 export async function manifestCompact(
   params: ManifestCompactParams
 ): Promise<ManifestCompactResult> {
@@ -63,6 +67,7 @@ export async function manifestCompact(
       snapshotId: 0n,
       sequenceNumber: 0n,
       changed: false,
+      inputManifestCount: 0,
       outputManifestCount: 0,
     };
   }
@@ -141,11 +146,12 @@ export async function manifestCompact(
       snapshotId: 0n,
       sequenceNumber: sequence_number,
       changed: false,
+      inputManifestCount: list.length,
       outputManifestCount: 0,
     };
   }
   const manifest_list_key = `metadata/${randomUUID()}.avro`;
-  const iter = asyncIterMap(final_groups, async (group) => {
+  const iter = asyncIterMap(final_groups, ITER_LIMIT, async (group) => {
     if (!group[0]) {
       return [];
     }
@@ -181,7 +187,6 @@ export async function manifestCompact(
     avroType: ManifestListType,
     iter,
   });
-
   const summary = {
     operation: 'replace',
     'added-data-files': '0',
@@ -209,6 +214,7 @@ export async function manifestCompact(
   return {
     ...snap_result,
     changed: true,
+    inputManifestCount: list.length,
     outputManifestCount: final_groups.length,
   };
 }
@@ -234,7 +240,7 @@ async function _combineGroup(
   const key = `metadata/${randomUUID()}.avro`;
   const schema = makeManifestSchema(params.spec, params.schemas, true);
   const type = makeManifestType(params.spec, params.schemas, true);
-  const iter = asyncIterMap(group, async (record) => {
+  const iter = asyncIterMap(group, ITER_LIMIT, async (record) => {
     return _streamReadManifest({
       credentials,
       region,

@@ -6,7 +6,7 @@ import {
 import { S3TablesClient } from '@aws-sdk/client-s3tables';
 import { Upload } from '@aws-sdk/lib-storage';
 import * as avsc from 'avsc';
-import { PassThrough } from 'node:stream';
+import { PassThrough, Transform } from 'node:stream';
 import * as zlib from 'node:zlib';
 
 import { fixupMetadata } from './avro_helper';
@@ -36,6 +36,18 @@ const g_s3TablesMap = new Map<
   string | undefined,
   Map<object | undefined, S3TablesClient>
 >();
+
+class ByteCounter extends Transform {
+  public bytes = 0;
+  override _transform(
+    chunk: Buffer,
+    _encoding: BufferEncoding,
+    callback: (error?: Error | null, data?: unknown) => void
+  ): void {
+    this.bytes += chunk.length;
+    callback(null, chunk);
+  }
+}
 
 export interface GetS3ClientParams {
   region?: string;
@@ -209,26 +221,32 @@ export async function streamWriteAvro<T>(
     codecs: { deflate: zlib.deflateRaw },
     metadata,
   } as ConstructorParameters<typeof avsc.streams.BlockEncoder>[1]);
+  const counter = new ByteCounter();
+  encoder.pipe(counter);
   const upload = new Upload({
     client: s3,
-    params: { Bucket: bucket, Key: key, Body: encoder },
+    params: { Bucket: bucket, Key: key, Body: counter },
   });
-  let file_size = 0;
-  upload.on('httpUploadProgress', (progress) => {
-    if (progress.loaded) {
-      file_size = progress.loaded;
+  async function _abortUpload() {
+    try {
+      await upload.abort();
+    } catch {
+      // noop
     }
-  });
+  }
+
   const upload_promise = upload.done();
   let found_err: Error | undefined;
   upload_promise.catch((err: unknown) => {
-    found_err = err as Error;
+    found_err ??= err as Error;
   });
   encoder.on('error', (err: Error) => {
-    found_err = err;
+    found_err ??= err;
+    void _abortUpload();
   });
   for await (const batch of params.iter) {
     if (found_err) {
+      void _abortUpload();
       throw found_err;
     }
     for (const record of batch) {
@@ -238,9 +256,10 @@ export async function streamWriteAvro<T>(
   encoder.end();
   await upload_promise;
   if (found_err) {
+    void _abortUpload();
     throw found_err;
   }
-  return file_size;
+  return counter.bytes;
 }
 export interface DownloadAvroParams {
   credentials?: AwsCredentialIdentity | undefined;
