@@ -9,6 +9,7 @@ import { getS3Client, parseS3Url } from '../src/s3_tools';
 import { getMetadata } from '../src/metadata';
 import { stringify } from '../src/json';
 import { AvroRegistry } from '../src/avro_types';
+import { log, setDebug } from './helpers/log_helper';
 
 import type { AwsCredentialIdentity } from '@aws-sdk/types';
 import type { IcebergMetadata } from '../src/iceberg';
@@ -63,7 +64,7 @@ export async function downloadTable(
     throw new Error('failed to stringify metadata');
   }
   await writeFile(metadataPath, metadataStr);
-  console.log('downloaded metadata:', metadataPath);
+  log('downloaded metadata:', metadataPath);
 
   /* Download all manifest lists and their manifests */
   for (const snapshot of metadata.snapshots) {
@@ -84,8 +85,8 @@ export async function downloadTable(
         throw new Error('missing manifest list body');
       }
       await writeFile(mlPath, Buffer.from(mlBody));
-      console.log('downloaded manfiest list:', mlPath);
-      console.log('');
+      log('downloaded manfiest list:', mlPath);
+      log('');
 
       /* Parse manifest list to get manifest paths */
       const manifestPaths = await _parseManifestList(Buffer.from(mlBody));
@@ -106,8 +107,8 @@ export async function downloadTable(
             throw new Error('missing manifest body');
           }
           await writeFile(mPath, Buffer.from(mBody));
-          console.log('downloaded manfiest:', mPath);
-          console.log('');
+          log('downloaded manfiest:', mPath);
+          log('');
 
           /* Parse manifest to get data file paths */
           const dataFilePaths = await _parseManifest(Buffer.from(mBody));
@@ -127,7 +128,7 @@ export async function downloadTable(
                 throw new Error('missing data file body');
               }
               await writeFile(dPath, Buffer.from(dBody));
-              console.log('downloaded data:', dKey.split('/').pop() ?? dKey);
+              log('downloaded data:', dKey.split('/').pop() ?? dKey);
             }
           }
         }
@@ -180,12 +181,13 @@ async function _parseManifest(buffer: Buffer): Promise<string[]> {
 }
 
 if (require.main === module) {
+  setDebug(true);
   const tableBucketARN = process.argv[2];
   const namespace = process.argv[3];
   const name = process.argv[4];
   const outputDir = process.argv[5];
   if (!tableBucketARN || !namespace || !name || !outputDir) {
-    console.log(
+    log(
       'Usage:',
       process.argv[1],
       '<tableBucketARN> <namespace> <name> <outputDir>'

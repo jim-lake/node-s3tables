@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import { basename } from 'node:path';
 import type { FailedTestContext } from './test_helper';
 
-const DEBUG = Boolean(process.env['DEBUG']);
+let DEBUG = Boolean(process.env['DEBUG']);
 
 const g_logs: unknown[][] = [];
 
@@ -29,4 +29,7 @@ export function log(...args: unknown[]) {
   } else {
     g_logs.push(args);
   }
+}
+export function setDebug(value: boolean) {
+  DEBUG = value;
 }
