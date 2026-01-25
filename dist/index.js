@@ -84,13 +84,21 @@ async function avroToBuffer(params) {
         }
     });
 }
-function icebergToAvroFields(spec, schema) {
-    return spec.fields.map((p) => _icebergToAvroField(p, schema));
+function icebergToAvroFields(spec, schemas) {
+    return spec.fields.map((p) => _icebergToAvroField(p, schemas));
 }
-function _icebergToAvroField(field, schema) {
-    const source = schema.fields.find((f) => f.id === field['source-id']);
+function _icebergToAvroField(field, schemas) {
+    let source;
+    for (const schema of schemas) {
+        for (const f of schema.fields) {
+            if (f.id === field['source-id']) {
+                source = f;
+                break;
+            }
+        }
+    }
     if (!source) {
-        throw new Error(`Source field ${field['source-id']} not found in schema`);
+        throw new Error(`Source field ${field['source-id']} not found in schemas`);
     }
     let avroType;
     switch (field.transform) {
@@ -260,9 +268,9 @@ const AvroLogicalTypes = {
     hour: HourStringType,
 };
 
-function makeManifestType(spec, schema) {
-    const part_fields = icebergToAvroFields(spec, schema);
-    return avsc__namespace.Type.forSchema({
+function makeManifestSchema(spec, schemas) {
+    const part_fields = icebergToAvroFields(spec, schemas);
+    return {
         type: 'record',
         name: 'manifest_entry',
         fields: [
@@ -492,9 +500,15 @@ function makeManifestType(spec, schema) {
                 'field-id': 2,
             },
         ],
-    }, { registry: { ...AvroRegistry }, logicalTypes: AvroLogicalTypes });
+    };
 }
-const ManifestListType = avsc__namespace.Type.forSchema({
+function makeManifestType(spec, schemas) {
+    return avsc__namespace.Type.forSchema(makeManifestSchema(spec, schemas), {
+        registry: { ...AvroRegistry },
+        logicalTypes: AvroLogicalTypes,
+    });
+}
+const ManifestListSchema = {
     type: 'record',
     name: 'manifest_file',
     fields: [
@@ -630,7 +644,10 @@ const ManifestListType = avsc__namespace.Type.forSchema({
             'field-id': 519,
         },
     ],
-}, { registry: { ...AvroRegistry } });
+};
+const ManifestListType = avsc__namespace.Type.forSchema(ManifestListSchema, {
+    registry: { ...AvroRegistry },
+});
 
 function _isPrimitive(t) {
     return typeof t === 'string';
@@ -1033,10 +1050,14 @@ async function updateManifestList(params) {
             reject(err);
         });
         decoder.on('data', (record) => {
-            const translated = translateRecord(sourceSchema, ManifestListType.schema(), record);
-            if (!encoder.write(translated)) {
-                decoder.pause();
-                encoder.once('drain', () => decoder.resume());
+            const translated = translateRecord(sourceSchema, ManifestListSchema, record);
+            if (translated.content !== ListContent.DATA ||
+                translated.added_files_count > 0 ||
+                translated.existing_files_count > 0) {
+                if (!encoder.write(translated)) {
+                    decoder.pause();
+                    encoder.once('drain', () => decoder.resume());
+                }
             }
         });
         decoder.on('end', () => {
@@ -1048,6 +1069,83 @@ async function updateManifestList(params) {
         source.pipe(decoder);
     });
     await Promise.all([stream_promise, upload.done()]);
+}
+async function streamWriteAvro(params) {
+    const { region, credentials, bucket, key } = params;
+    const metadata = params.metadata
+        ? fixupMetadata(params.metadata)
+        : params.metadata;
+    const s3 = getS3Client({ region, credentials });
+    const encoder = new avsc__namespace.streams.BlockEncoder(params.avroType, {
+        codec: 'deflate',
+        codecs: { deflate: zlib__namespace.deflateRaw },
+        metadata,
+    });
+    const upload = new libStorage.Upload({
+        client: s3,
+        params: { Bucket: bucket, Key: key, Body: encoder },
+    });
+    let file_size = 0;
+    upload.on('httpUploadProgress', (progress) => {
+        if (progress.loaded) {
+            file_size = progress.loaded;
+        }
+    });
+    const stream_promise = new Promise((resolve, reject) => {
+        encoder.on('error', (err) => {
+            reject(err);
+        });
+        encoder.on('finish', () => {
+            resolve();
+        });
+    });
+    for await (const batch of params.iter) {
+        for (const record of batch) {
+            encoder.write(record);
+        }
+    }
+    encoder.end();
+    await Promise.all([stream_promise, upload.done()]);
+    return file_size;
+}
+async function downloadAvro(params) {
+    const { region, credentials, bucket, key, avroSchema } = params;
+    const s3 = getS3Client({ region, credentials });
+    const get = new clientS3.GetObjectCommand({ Bucket: bucket, Key: key });
+    const response = await s3.send(get);
+    const source = response.Body;
+    if (!source) {
+        throw new Error('failed to get source manifest list');
+    }
+    let sourceSchema;
+    const decoder = new avsc__namespace.streams.BlockDecoder({
+        codecs: { deflate: zlib__namespace.inflateRaw },
+        parseHook(schema) {
+            sourceSchema = schema;
+            return avsc__namespace.Type.forSchema(schema, {
+                registry: { ...AvroRegistry },
+            });
+        },
+    });
+    const records = [];
+    const stream_promise = new Promise((resolve, reject) => {
+        source.on('error', (err) => {
+            reject(err);
+        });
+        decoder.on('error', (err) => {
+            reject(err);
+        });
+        decoder.on('data', (record) => {
+            const translated = translateRecord(sourceSchema, avroSchema, record);
+            records.push(translated);
+        });
+        decoder.on('end', () => {
+            resolve();
+        });
+        source.pipe(decoder);
+    });
+    await stream_promise;
+    return records;
 }
 
 async function addManifest(params) {
@@ -1119,7 +1217,7 @@ async function addManifest(params) {
             },
         };
     });
-    const manifest_type = makeManifestType(spec, schema);
+    const manifest_type = makeManifestType(spec, [schema]);
     const manifest_buf = await avroToBuffer({
         type: manifest_type,
         metadata: {
@@ -1365,15 +1463,15 @@ async function removeSnapshots(params) {
     });
 }
 
-const DEFAULT_RETRY_COUNT = 5;
+const DEFAULT_RETRY_COUNT$1 = 5;
 async function addDataFiles(params) {
     const { credentials } = params;
-    const retry_max = params.retryCount ?? DEFAULT_RETRY_COUNT;
+    const retry_max = params.retryCount ?? DEFAULT_RETRY_COUNT$1;
     const region = params.tableBucketARN.split(':')[3];
     if (!region) {
         throw new Error('bad tableBucketARN');
     }
-    const snapshot_id = params.snapshotId ?? _randomBigInt64();
+    const snapshot_id = params.snapshotId ?? _randomBigInt64$1();
     const metadata = await getMetadata(params);
     const bucket = metadata.location.split('/').slice(-1)[0];
     const parent_snapshot_id = BigInt(metadata['current-snapshot-id']);
@@ -1554,6 +1652,116 @@ async function addDataFiles(params) {
         }
     }
 }
+function _randomBigInt64$1() {
+    const bytes = node_crypto.randomBytes(8);
+    let ret = bytes.readBigUInt64BE();
+    ret &= BigInt('0x7FFFFFFFFFFFFFFF');
+    if (ret === 0n) {
+        ret = 1n;
+    }
+    return ret;
+}
+
+const DEFAULT_RETRY_COUNT = 5;
+async function submitSnapshot(params) {
+    const { snapshotId, parentSnapshotId, resolveConflict } = params;
+    let { sequenceNumber, removeSnapshotId, manifestListUrl, summary } = params;
+    const retry_max = params.retryCount ?? DEFAULT_RETRY_COUNT;
+    let expected_snapshot_id = parentSnapshotId;
+    let conflict_snap;
+    for (let try_count = 0;; try_count++) {
+        if (conflict_snap && resolveConflict) {
+            const resolve_result = await resolveConflict(conflict_snap);
+            summary = resolve_result.summary;
+            manifestListUrl = resolve_result.manifestListUrl;
+        }
+        else if (conflict_snap) {
+            throw new Error('conflict');
+        }
+        try {
+            const updates = [
+                {
+                    action: 'add-snapshot',
+                    snapshot: {
+                        'sequence-number': sequenceNumber,
+                        'snapshot-id': snapshotId,
+                        'parent-snapshot-id': parentSnapshotId,
+                        'timestamp-ms': Date.now(),
+                        summary,
+                        'manifest-list': manifestListUrl,
+                        'schema-id': params.currentSchemaId,
+                    },
+                },
+                {
+                    action: 'set-snapshot-ref',
+                    'snapshot-id': snapshotId,
+                    type: 'branch',
+                    'ref-name': 'main',
+                },
+            ];
+            if (removeSnapshotId && removeSnapshotId > 0n) {
+                updates.push({
+                    action: 'remove-snapshots',
+                    'snapshot-ids': [removeSnapshotId],
+                });
+            }
+            const result = await icebergRequest({
+                credentials: params.credentials,
+                tableBucketARN: params.tableBucketARN,
+                method: 'POST',
+                suffix: `/namespaces/${params.namespace}/tables/${params.name}`,
+                body: {
+                    requirements: expected_snapshot_id > 0n
+                        ? [
+                            {
+                                type: 'assert-ref-snapshot-id',
+                                ref: 'main',
+                                'snapshot-id': expected_snapshot_id,
+                            },
+                        ]
+                        : [],
+                    updates,
+                },
+            });
+            return {
+                result,
+                retriesNeeded: try_count,
+                parentSnapshotId,
+                snapshotId,
+                sequenceNumber,
+            };
+        }
+        catch (e) {
+            if (e instanceof IcebergHttpError &&
+                e.status === 409 &&
+                try_count < retry_max) {
+                // retry case
+                removeSnapshotId = 0n;
+            }
+            else {
+                throw e;
+            }
+        }
+        // we do a merge in the append only simultanious case
+        const conflict_metadata = await getMetadata(params);
+        const conflict_snapshot_id = BigInt(conflict_metadata['current-snapshot-id']);
+        if (conflict_snapshot_id <= 0n) {
+            throw new Error('conflict');
+        }
+        conflict_snap = conflict_metadata.snapshots.find((s) => s['snapshot-id'] === conflict_snapshot_id);
+        if (!conflict_snap) {
+            throw new Error('conflict');
+        }
+        if (conflict_snap.summary.operation === 'append' &&
+            BigInt(conflict_snap['sequence-number']) === sequenceNumber) {
+            expected_snapshot_id = conflict_snapshot_id;
+            sequenceNumber++;
+        }
+        else {
+            throw new Error('conflict');
+        }
+    }
+}
 async function setCurrentCommit(params) {
     const commit_result = await icebergRequest({
         credentials: params.credentials,
@@ -1574,12 +1782,340 @@ async function setCurrentCommit(params) {
     });
     return commit_result;
 }
+
+async function* asyncIterMap(items, func) {
+    const pending = new Set();
+    for (const item of items) {
+        const ref = {};
+        const wrapper = func(item).then((value) => ({
+            self: ref.current,
+            value,
+        }));
+        ref.current = wrapper;
+        pending.add(wrapper);
+    }
+    while (pending.size) {
+        const { self, value } = await Promise.race(pending);
+        if (self) {
+            pending.delete(self);
+        }
+        yield value;
+    }
+}
+
+async function manifestCompact(params) {
+    const { credentials, targetCount, calculateWeight } = params;
+    const region = params.tableBucketARN.split(':')[3];
+    if (!region) {
+        throw new Error('bad tableBucketARN');
+    }
+    const snapshot_id = params.snapshotId ?? _randomBigInt64();
+    const metadata = await getMetadata(params);
+    const bucket = metadata.location.split('/').slice(-1)[0];
+    const parent_snapshot_id = BigInt(metadata['current-snapshot-id']);
+    const snapshot = metadata.snapshots.find((s) => BigInt(s['snapshot-id']) === parent_snapshot_id) ?? null;
+    if (!bucket) {
+        throw new Error('bad manifest location');
+    }
+    if (!snapshot) {
+        return {
+            result: {},
+            retriesNeeded: 0,
+            parentSnapshotId: parent_snapshot_id,
+            snapshotId: 0n,
+            sequenceNumber: 0n,
+            changed: false,
+            outputManifestCount: 0,
+        };
+    }
+    if (parent_snapshot_id <= 0n) {
+        throw new Error('no old snapshot');
+    }
+    const old_list_key = parseS3Url(snapshot['manifest-list']).key;
+    if (!old_list_key) {
+        throw new Error('last snapshot invalid');
+    }
+    const sequence_number = BigInt(metadata['last-sequence-number']) + 1n;
+    let remove_snapshot_id = 0n;
+    if (params.maxSnapshots && metadata.snapshots.length >= params.maxSnapshots) {
+        let earliest_time = 0;
+        for (const snap of metadata.snapshots) {
+            const snap_time = snap['timestamp-ms'];
+            if (earliest_time === 0 || snap_time < earliest_time) {
+                earliest_time = snap_time;
+                remove_snapshot_id = BigInt(snap['snapshot-id']);
+            }
+        }
+    }
+    const list = await downloadAvro({
+        credentials,
+        region,
+        bucket,
+        key: old_list_key,
+        avroSchema: ManifestListSchema,
+    });
+    const filtered = list.filter(_filterDeletes);
+    const groups = _groupList(filtered, (a, b) => {
+        if (a.content === ListContent.DATA &&
+            b.content === ListContent.DATA &&
+            a.deleted_files_count === 0 &&
+            b.deleted_files_count === 0 &&
+            a.partition_spec_id === b.partition_spec_id) {
+            return (!a.partitions ||
+                a.partitions.every((part, i) => {
+                    const other = b.partitions?.[i];
+                    return (other &&
+                        (part.upper_bound === other.upper_bound ||
+                            (part.upper_bound &&
+                                other.upper_bound &&
+                                Buffer.compare(part.upper_bound, other.upper_bound) === 0)) &&
+                        (part.lower_bound === other.lower_bound ||
+                            (part.lower_bound &&
+                                other.lower_bound &&
+                                Buffer.compare(part.lower_bound, other.lower_bound) === 0)));
+                }));
+        }
+        return false;
+    });
+    const final_groups = targetCount !== undefined &&
+        calculateWeight !== undefined &&
+        groups.length > targetCount
+        ? _combineWeightGroups(groups, targetCount, calculateWeight)
+        : groups;
+    if (final_groups.length === list.length && !params.forceRewrite) {
+        return {
+            result: {},
+            retriesNeeded: 0,
+            parentSnapshotId: parent_snapshot_id,
+            snapshotId: 0n,
+            sequenceNumber: sequence_number,
+            changed: false,
+            outputManifestCount: 0,
+        };
+    }
+    const manifest_list_key = `metadata/${node_crypto.randomUUID()}.avro`;
+    const iter = asyncIterMap(final_groups, async (group) => {
+        if (!group[0]) {
+            return [];
+        }
+        const { partition_spec_id } = group[0];
+        const spec = metadata['partition-specs'].find((p) => p['spec-id'] === partition_spec_id);
+        if (!spec) {
+            throw new Error(`Partition spec not found: ${partition_spec_id}`);
+        }
+        return _combineGroup({
+            credentials,
+            region,
+            bucket,
+            group,
+            spec,
+            snapshotId: snapshot_id,
+            schemas: metadata.schemas,
+            sequenceNumber: sequence_number,
+            forceRewrite: params.forceRewrite ?? false,
+        });
+    });
+    await streamWriteAvro({
+        credentials,
+        region,
+        bucket,
+        key: manifest_list_key,
+        metadata: {
+            'sequence-number': String(sequence_number),
+            'snapshot-id': String(snapshot_id),
+            'parent-snapshot-id': String(parent_snapshot_id),
+        },
+        avroType: ManifestListType,
+        iter,
+    });
+    const summary = {
+        operation: 'replace',
+        'added-data-files': '0',
+        'deleted-data-files': '0',
+        'added-records': '0',
+        'deleted-records': '0',
+        'added-files-size': '0',
+        'removed-files-size': '0',
+        'changed-partition-count': '0',
+    };
+    const snap_result = await submitSnapshot({
+        credentials,
+        tableBucketARN: params.tableBucketARN,
+        namespace: params.namespace,
+        name: params.name,
+        currentSchemaId: metadata['current-schema-id'],
+        parentSnapshotId: parent_snapshot_id,
+        snapshotId: snapshot_id,
+        sequenceNumber: sequence_number,
+        manifestListUrl: `s3://${bucket}/${manifest_list_key}`,
+        summary,
+        removeSnapshotId: remove_snapshot_id,
+        retryCount: params.retryCount,
+    });
+    return { ...snap_result, changed: true, outputManifestCount: groups.length };
+}
+async function _combineGroup(params) {
+    const { credentials, region, bucket, group } = params;
+    const record0 = group[0];
+    if ((group.length === 1 && !params.forceRewrite) || !record0) {
+        return group;
+    }
+    const key = `metadata/${node_crypto.randomUUID()}.avro`;
+    const schema = makeManifestSchema(params.spec, params.schemas);
+    const type = makeManifestType(params.spec, params.schemas);
+    const iter = asyncIterMap(group, async (record) => {
+        return _streamReadManifest({
+            credentials,
+            region,
+            bucket,
+            url: record.manifest_path,
+            schema,
+        });
+    });
+    const manifest_length = await streamWriteAvro({
+        credentials,
+        region,
+        bucket,
+        key,
+        metadata: {
+            'partition-spec-id': String(params.spec['spec-id']),
+            'partition-spec': JSON.stringify(params.spec.fields),
+        },
+        avroType: type,
+        iter,
+    });
+    const ret = {
+        manifest_path: `s3://${bucket}/${key}`,
+        manifest_length: BigInt(manifest_length),
+        partition_spec_id: record0.partition_spec_id,
+        content: record0.content,
+        sequence_number: params.sequenceNumber,
+        min_sequence_number: params.sequenceNumber,
+        added_snapshot_id: params.snapshotId,
+        added_files_count: 0,
+        existing_files_count: 0,
+        deleted_files_count: 0,
+        added_rows_count: 0n,
+        existing_rows_count: 0n,
+        deleted_rows_count: 0n,
+        partitions: record0.partitions ?? null,
+    };
+    for (const record of group) {
+        ret.added_files_count += record.added_files_count;
+        ret.existing_files_count += record.existing_files_count;
+        ret.deleted_files_count += record.deleted_files_count;
+        ret.added_rows_count += record.added_rows_count;
+        ret.existing_rows_count += record.existing_rows_count;
+        ret.deleted_rows_count += record.deleted_rows_count;
+        ret.min_sequence_number = _bigintMin(ret.min_sequence_number, record.min_sequence_number);
+    }
+    for (let i = 1; i < group.length; i++) {
+        const parts = group[i]?.partitions;
+        if (ret.partitions && parts) {
+            for (let j = 0; j < parts.length; j++) {
+                const part = parts[j];
+                const ret_part = ret.partitions[j];
+                if (part && ret_part) {
+                    ret_part.contains_null ||= part.contains_null;
+                    if (part.contains_nan !== undefined) {
+                        ret_part.contains_nan =
+                            (ret_part.contains_nan ?? false) || part.contains_nan;
+                    }
+                    if (!ret_part.upper_bound ||
+                        (part.upper_bound &&
+                            Buffer.compare(part.upper_bound, ret_part.upper_bound) > 0)) {
+                        ret_part.upper_bound = part.upper_bound ?? null;
+                    }
+                    if (!ret_part.lower_bound ||
+                        (part.lower_bound &&
+                            Buffer.compare(part.lower_bound, ret_part.lower_bound) < 0)) {
+                        ret_part.lower_bound = part.lower_bound ?? null;
+                    }
+                }
+            }
+        }
+        else if (parts) {
+            ret.partitions = parts;
+        }
+    }
+    return [ret];
+}
+async function _streamReadManifest(params) {
+    let bucket = params.bucket;
+    let key = params.url;
+    if (params.url.startsWith('s3://')) {
+        const parsed = parseS3Url(params.url);
+        bucket = parsed.bucket;
+        key = parsed.key;
+    }
+    if (!bucket || !key) {
+        throw new Error(`invalid manfiest url: ${params.url}`);
+    }
+    return downloadAvro({
+        credentials: params.credentials,
+        region: params.region,
+        bucket,
+        key,
+        avroSchema: params.schema,
+    });
+}
+function _filterDeletes(record) {
+    return (record.content === ListContent.DATA &&
+        record.added_files_count === 0 &&
+        record.existing_files_count === 0);
+}
+function _groupList(list, compare) {
+    const ret = [];
+    for (const item of list) {
+        let added = false;
+        for (const group of ret) {
+            if (group[0] && compare(group[0], item)) {
+                group.push(item);
+                added = true;
+                break;
+            }
+        }
+        if (!added) {
+            ret.push([item]);
+        }
+    }
+    return ret;
+}
+function _combineWeightGroups(groups, targetCount, calculateWeight) {
+    const weighted_groups = groups.map((group) => ({
+        group,
+        weight: calculateWeight(group),
+    }));
+    weighted_groups.sort(_sortGroup);
+    while (weighted_groups.length > targetCount) {
+        const remove_item = weighted_groups.shift();
+        if (!remove_item) {
+            break;
+        }
+        for (const item of remove_item.group) {
+            weighted_groups[0]?.group.push(item);
+        }
+    }
+    return weighted_groups.map((g) => g.group);
+}
+function _sortGroup(a, b) {
+    return a.weight - b.weight;
+}
 function _randomBigInt64() {
     const bytes = node_crypto.randomBytes(8);
     let ret = bytes.readBigUInt64BE();
     ret &= BigInt('0x7FFFFFFFFFFFFFFF');
     if (ret === 0n) {
         ret = 1n;
+    }
+    return ret;
+}
+function _bigintMin(value0, ...values) {
+    let ret = value0;
+    for (const val of values) {
+        if (val < ret) {
+            ret = val;
+        }
     }
     return ret;
 }
@@ -1602,5 +2138,7 @@ exports.addPartitionSpec = addPartitionSpec;
 exports.addSchema = addSchema;
 exports.default = index;
 exports.getMetadata = getMetadata;
+exports.manifestCompact = manifestCompact;
 exports.removeSnapshots = removeSnapshots;
 exports.setCurrentCommit = setCurrentCommit;
+exports.submitSnapshot = submitSnapshot;

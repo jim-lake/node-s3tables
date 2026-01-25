@@ -20,7 +20,7 @@ export type TableLocation =
   | { tableBucketARN: string; namespace: string; name: string };
 export type GetMetadataParams = TableLocation & {
   region?: string;
-  credentials?: AwsCredentialIdentity;
+  credentials?: AwsCredentialIdentity | undefined;
 };
 export async function getMetadata(
   params: GetMetadataParams

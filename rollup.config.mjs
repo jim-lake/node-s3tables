@@ -16,4 +16,15 @@ export default [
     output: [{ file: 'dist/index.d.ts', format: 'es' }],
     plugins: [dts()],
   },
+  {
+    input: 'src/bin.ts',
+    output: {
+      file: 'dist/bin.js',
+      format: 'cjs',
+      banner: '#!/usr/bin/env node',
+    },
+    plugins: [typescript(), resolve(), commonjs()],
+    external: [/node_modules/, 'node-s3tables'],
+    treeshake: 'smallest',
+  },
 ];

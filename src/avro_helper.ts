@@ -10,6 +10,7 @@ import type {
   IcebergPartitionSpec,
   IcebergPartitionField,
   IcebergSchema,
+  IcebergSchemaField,
 } from './iceberg';
 
 export function fixupMetadata(
@@ -71,17 +72,25 @@ export async function avroToBuffer(
 }
 export function icebergToAvroFields(
   spec: IcebergPartitionSpec,
-  schema: IcebergSchema
+  schemas: IcebergSchema[]
 ) {
-  return spec.fields.map((p) => _icebergToAvroField(p, schema));
+  return spec.fields.map((p) => _icebergToAvroField(p, schemas));
 }
 function _icebergToAvroField(
   field: IcebergPartitionField,
-  schema: IcebergSchema
+  schemas: IcebergSchema[]
 ) {
-  const source = schema.fields.find((f) => f.id === field['source-id']);
+  let source: IcebergSchemaField | undefined;
+  for (const schema of schemas) {
+    for (const f of schema.fields) {
+      if (f.id === field['source-id']) {
+        source = f;
+        break;
+      }
+    }
+  }
   if (!source) {
-    throw new Error(`Source field ${field['source-id']} not found in schema`);
+    throw new Error(`Source field ${field['source-id']} not found in schemas`);
   }
   let avroType: AvroType;
   switch (field.transform) {

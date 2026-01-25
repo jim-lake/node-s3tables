@@ -113,7 +113,7 @@ export async function addManifest(
       },
     };
   });
-  const manifest_type = makeManifestType(spec, schema);
+  const manifest_type = makeManifestType(spec, [schema]);
   const manifest_buf = await avroToBuffer({
     type: manifest_type,
     metadata: {

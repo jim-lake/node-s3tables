@@ -130,7 +130,7 @@ type TableLocation = {
 };
 type GetMetadataParams = TableLocation & {
     region?: string;
-    credentials?: AwsCredentialIdentity;
+    credentials?: AwsCredentialIdentity | undefined;
 };
 declare function getMetadata(params: GetMetadataParams): Promise<IcebergMetadata>;
 interface AddSchemaParams {
@@ -194,6 +194,34 @@ interface AddDataFilesResult {
     sequenceNumber: bigint;
 }
 declare function addDataFiles(params: AddDataFilesParams): Promise<AddDataFilesResult>;
+
+interface SubmitSnapshotParams {
+    credentials?: AwsCredentialIdentity | undefined;
+    tableBucketARN: string;
+    namespace: string;
+    name: string;
+    currentSchemaId: number;
+    parentSnapshotId: bigint;
+    snapshotId: bigint;
+    sequenceNumber: bigint;
+    retryCount?: number | undefined;
+    removeSnapshotId?: bigint | undefined;
+    manifestListUrl: string;
+    summary: Record<string, string>;
+    resolveConflict?: (conflictSnapshot: IcebergSnapshot) => Promise<ResolveConflictResult>;
+}
+interface ResolveConflictResult {
+    manifestListUrl: string;
+    summary: Record<string, string>;
+}
+interface SubmitSnapshotResult {
+    result: JSONObject;
+    retriesNeeded: number;
+    parentSnapshotId: bigint;
+    snapshotId: bigint;
+    sequenceNumber: bigint;
+}
+declare function submitSnapshot(params: SubmitSnapshotParams): Promise<SubmitSnapshotResult>;
 interface SetCurrentCommitParams {
     credentials?: AwsCredentialIdentity;
     tableBucketARN: string;
@@ -210,6 +238,25 @@ declare class IcebergHttpError extends Error {
     constructor(status: number, body: JSONValue, message: string);
 }
 
+type CalculateWeightFunction = (group: ManifestListRecord[]) => number;
+interface ManifestCompactParams {
+    credentials?: AwsCredentialIdentity;
+    tableBucketARN: string;
+    namespace: string;
+    name: string;
+    snapshotId?: bigint;
+    targetCount?: number;
+    calculateWeight?: CalculateWeightFunction;
+    forceRewrite?: boolean;
+    retryCount?: number;
+    maxSnapshots?: number;
+}
+interface ManifestCompactResult extends SubmitSnapshotResult {
+    changed: boolean;
+    outputManifestCount: number;
+}
+declare function manifestCompact(params: ManifestCompactParams): Promise<ManifestCompactResult>;
+
 declare const _default: {
     IcebergHttpError: typeof IcebergHttpError;
     getMetadata: typeof getMetadata;
@@ -221,5 +268,5 @@ declare const _default: {
     removeSnapshots: typeof removeSnapshots;
 };
 
-export { IcebergHttpError, addDataFiles, addManifest, addPartitionSpec, addSchema, _default as default, getMetadata, removeSnapshots, setCurrentCommit };
-export type { AddDataFilesParams, AddDataFilesResult, AddFile, AddFileList, AddManifestParams, AddPartitionSpecParams, AddSchemaParams, GetMetadataParams, IcebergComplexType, IcebergMetadata, IcebergPartitionField, IcebergPartitionSpec, IcebergPrimitiveType, IcebergSchema, IcebergSchemaField, IcebergSnapshot, IcebergSnapshotSummary, IcebergTransform, IcebergType, IcebergUpdateResponse, RemoveSnapshotsParams, SetCurrentCommitParams, TableLocation };
+export { IcebergHttpError, addDataFiles, addManifest, addPartitionSpec, addSchema, _default as default, getMetadata, manifestCompact, removeSnapshots, setCurrentCommit, submitSnapshot };
+export type { AddDataFilesParams, AddDataFilesResult, AddFile, AddFileList, AddManifestParams, AddPartitionSpecParams, AddSchemaParams, CalculateWeightFunction, GetMetadataParams, IcebergComplexType, IcebergMetadata, IcebergPartitionField, IcebergPartitionSpec, IcebergPrimitiveType, IcebergSchema, IcebergSchemaField, IcebergSnapshot, IcebergSnapshotSummary, IcebergTransform, IcebergType, IcebergUpdateResponse, ManifestCompactParams, ManifestCompactResult, RemoveSnapshotsParams, ResolveConflictResult, SetCurrentCommitParams, SubmitSnapshotParams, SubmitSnapshotResult, TableLocation };

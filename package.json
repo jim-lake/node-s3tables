@@ -4,12 +4,15 @@
   "description": "node api for dealing with s3tables",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "node-s3tables": "dist/bin-compact.js"
+  },
   "files": [
     "dist/**/*"
   ],
   "scripts": {
     "build": "rollup -c",
-    "ts-check": "tsc --noEmit",
+    "ts:check": "tsc --noEmit",
     "lint": "eslint src test",
     "pretty": "prettier -u --write \"**/*\" --log-level warn",
     "test": "dotenv -- tsx --test test/*.test.ts",

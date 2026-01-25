@@ -10,12 +10,13 @@ import { PassThrough } from 'node:stream';
 import * as zlib from 'node:zlib';
 
 import { fixupMetadata } from './avro_helper';
-import { ManifestListType } from './avro_schema';
-import { AvroRegistry } from './avro_types';
+import { ManifestListSchema, ManifestListType } from './avro_schema';
+import { AvroRegistry, ListContent } from './avro_types';
 import { translateRecord } from './schema_translator';
 
 import type { Readable } from 'node:stream';
 import type { AwsCredentialIdentity } from '@aws-sdk/types';
+import type { Schema, Type } from 'avsc';
 import type { ManifestListRecord } from './avro_types';
 
 const S3_REGEX = /^s3:\/\/([^/]+)\/(.+)$/;
@@ -162,12 +163,18 @@ export async function updateManifestList(params: UpdateManifestListParams) {
     decoder.on('data', (record: unknown) => {
       const translated = translateRecord(
         sourceSchema,
-        ManifestListType.schema(),
+        ManifestListSchema,
         record
-      );
-      if (!encoder.write(translated)) {
-        decoder.pause();
-        encoder.once('drain', () => decoder.resume());
+      ) as ManifestListRecord;
+      if (
+        translated.content !== ListContent.DATA ||
+        translated.added_files_count > 0 ||
+        translated.existing_files_count > 0
+      ) {
+        if (!encoder.write(translated)) {
+          decoder.pause();
+          encoder.once('drain', () => decoder.resume());
+        }
       }
     });
     decoder.on('end', () => {
@@ -179,4 +186,101 @@ export async function updateManifestList(params: UpdateManifestListParams) {
     source.pipe(decoder);
   });
   await Promise.all([stream_promise, upload.done()]);
+}
+export interface StreamWriteAvroParams<T> {
+  credentials?: AwsCredentialIdentity | undefined;
+  region: string;
+  bucket: string;
+  key: string;
+  metadata?: Record<string, string | Buffer>;
+  avroType: Type;
+  iter: AsyncIterable<T[]>;
+}
+export async function streamWriteAvro<T>(
+  params: StreamWriteAvroParams<T>
+): Promise<number> {
+  const { region, credentials, bucket, key } = params;
+  const metadata = params.metadata
+    ? fixupMetadata(params.metadata)
+    : params.metadata;
+  const s3 = getS3Client({ region, credentials });
+  const encoder = new avsc.streams.BlockEncoder(params.avroType, {
+    codec: 'deflate',
+    codecs: { deflate: zlib.deflateRaw },
+    metadata,
+  } as ConstructorParameters<typeof avsc.streams.BlockEncoder>[1]);
+  const upload = new Upload({
+    client: s3,
+    params: { Bucket: bucket, Key: key, Body: encoder },
+  });
+  let file_size = 0;
+  upload.on('httpUploadProgress', (progress) => {
+    if (progress.loaded) {
+      file_size = progress.loaded;
+    }
+  });
+  const stream_promise = new Promise<void>((resolve, reject) => {
+    encoder.on('error', (err) => {
+      reject(err);
+    });
+    encoder.on('finish', () => {
+      resolve();
+    });
+  });
+  for await (const batch of params.iter) {
+    for (const record of batch) {
+      encoder.write(record);
+    }
+  }
+  encoder.end();
+  await Promise.all([stream_promise, upload.done()]);
+  return file_size;
+}
+export interface DownloadAvroParams {
+  credentials?: AwsCredentialIdentity | undefined;
+  region: string;
+  bucket: string;
+  key: string;
+  avroSchema: Schema;
+}
+export async function downloadAvro<T>(
+  params: DownloadAvroParams
+): Promise<T[]> {
+  const { region, credentials, bucket, key, avroSchema } = params;
+  const s3 = getS3Client({ region, credentials });
+  const get = new GetObjectCommand({ Bucket: bucket, Key: key });
+  const response = await s3.send(get);
+  const source = response.Body as Readable | undefined;
+  if (!source) {
+    throw new Error('failed to get source manifest list');
+  }
+  let sourceSchema: unknown;
+  const decoder = new avsc.streams.BlockDecoder({
+    codecs: { deflate: zlib.inflateRaw },
+    parseHook(schema) {
+      sourceSchema = schema;
+      return avsc.Type.forSchema(schema as unknown as avsc.Schema, {
+        registry: { ...AvroRegistry },
+      });
+    },
+  });
+  const records: T[] = [];
+  const stream_promise = new Promise<void>((resolve, reject) => {
+    source.on('error', (err) => {
+      reject(err);
+    });
+    decoder.on('error', (err) => {
+      reject(err);
+    });
+    decoder.on('data', (record: unknown) => {
+      const translated = translateRecord(sourceSchema, avroSchema, record);
+      records.push(translated as T);
+    });
+    decoder.on('end', () => {
+      resolve();
+    });
+    source.pipe(decoder);
+  });
+  await stream_promise;
+  return records;
 }

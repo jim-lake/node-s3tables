@@ -4,13 +4,11 @@ interface RawAvroField {
   'field-id'?: number;
   default?: unknown;
 }
-
 interface RawAvroRecordSchema {
   type: 'record';
   name: string;
   fields: RawAvroField[];
 }
-
 function isRawRecordSchema(schema: unknown): schema is RawAvroRecordSchema {
   return (
     typeof schema === 'object' &&
