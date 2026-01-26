@@ -2,6 +2,7 @@
 
 import eslint from '@eslint/js';
 import tseslint from 'typescript-eslint';
+import importPlugin from 'eslint-plugin-import';
 
 export default tseslint.config(
   eslint.configs.recommended,
@@ -11,6 +12,7 @@ export default tseslint.config(
   ...tseslint.configs.strictTypeChecked,
   ...tseslint.configs.stylistic,
   ...tseslint.configs.stylisticTypeChecked,
+  importPlugin.flatConfigs.recommended,
   {
     languageOptions: {
       parserOptions: {
@@ -19,6 +21,7 @@ export default tseslint.config(
       },
     },
     rules: {
+      'import/no-unresolved': 'off',
       'function-paren-newline': 'off',
       '@typescript-eslint/no-misused-spread': ['error', { allow: ['Error'] }],
       '@typescript-eslint/no-explicit-any': 'error',
@@ -270,10 +273,11 @@ export default tseslint.config(
         'error',
         {
           prefer: 'type-imports',
-          disallowTypeAnnotations: false,
+          disallowTypeAnnotations: true,
           fixStyle: 'separate-type-imports',
         },
       ],
+      'import/consistent-type-specifier-style': ['error', 'prefer-top-level'],
 
       'array-bracket-newline': ['error', 'consistent'],
       'array-bracket-spacing': ['error', 'never'],

@@ -2,11 +2,10 @@ import { test } from './helpers/test_helper';
 import { log } from './helpers/log_helper';
 import { strict as assert } from 'node:assert';
 import { PassThrough } from 'node:stream';
-import { config } from './helpers/aws_clients';
+import { config, clients } from './helpers/aws_clients';
 import { setupTable } from './helpers/table_lifecycle';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { ParquetWriter, ParquetSchema } from 'parquetjs';
-import { clients } from './helpers/aws_clients';
 
 import { getMetadata, addSchema, addDataFiles, removeSnapshots } from '../src';
 

@@ -5,8 +5,12 @@ import { config } from './helpers/aws_clients';
 import { setupTable } from './helpers/table_lifecycle';
 import { createPartitionedParquetFile } from './helpers/parquet_helper';
 
-import { getMetadata, addPartitionSpec, addDataFiles } from '../src';
-import { manifestCompact } from '../src';
+import {
+  getMetadata,
+  addPartitionSpec,
+  addDataFiles,
+  manifestCompact,
+} from '../src';
 import type { ManifestListRecord } from '../src';
 
 void test('manifest compact with targetCount and calculateWeight', async (t) => {

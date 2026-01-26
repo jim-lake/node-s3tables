@@ -1,11 +1,7 @@
 /* eslint-disable no-console */
 import { parseArgs } from 'node:util';
-import {
-  manifestCompact,
-  addDataFiles,
-  type AddFile,
-  type AddDataFilesParams,
-} from 'node-s3tables';
+import { manifestCompact, addDataFiles } from 'node-s3tables';
+import type { AddFile, AddDataFilesParams } from 'node-s3tables';
 
 const { positionals, values } = parseArgs({
   allowPositionals: true,

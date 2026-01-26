@@ -13,7 +13,7 @@
   "scripts": {
     "build": "rollup -c",
     "ts:check": "tsc --noEmit",
-    "lint": "eslint src test",
+    "lint": "eslint src test --fix",
     "pretty": "prettier -u --write \"**/*\" --log-level warn",
     "test": "dotenv -- tsx --test test/*.test.ts",
     "test:single": "dotenv -- tsx --test",

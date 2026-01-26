@@ -2,13 +2,12 @@ import { test } from './helpers/test_helper';
 import { log } from './helpers/log_helper';
 import { strict as assert } from 'node:assert';
 import { inspect } from 'node:util';
-import { config } from './helpers/aws_clients';
+import { config, clients } from './helpers/aws_clients';
 import { setupTable } from './helpers/table_lifecycle';
 import { queryRows } from './helpers/athena_helper';
 import { PassThrough } from 'node:stream';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { ParquetWriter, ParquetSchema } from 'parquetjs';
-import { clients } from './helpers/aws_clients';
 
 import { getMetadata, addDataFiles } from '../src';
 import type { AddFile } from '../src/manifest';

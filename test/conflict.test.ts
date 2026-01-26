@@ -4,12 +4,11 @@ import { setTimeout } from 'node:timers/promises';
 
 import { test } from './helpers/test_helper';
 import { log } from './helpers/log_helper';
-import { config } from './helpers/aws_clients';
+import { config, clients } from './helpers/aws_clients';
 import { setupTable } from './helpers/table_lifecycle';
 import { queryRows } from './helpers/athena_helper';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { ParquetWriter, ParquetSchema } from 'parquetjs';
-import { clients } from './helpers/aws_clients';
 
 import { getMetadata, addSchema, addPartitionSpec, addDataFiles } from '../src';
 
