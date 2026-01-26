@@ -41,22 +41,30 @@ export async function queryRows<T = Record<string, unknown>>(
   }
 
   if (status === 'SUCCEEDED') {
-    const queryResults = await clients.athena.send(
-      new GetQueryResultsCommand({ QueryExecutionId })
-    );
+    const allRows = [];
+    let nextToken: string | undefined;
 
-    const rows = queryResults.ResultSet?.Rows ?? [];
-    if (rows.length === 0) {
+    do {
+      const queryResults = await clients.athena.send(
+        new GetQueryResultsCommand({ QueryExecutionId, NextToken: nextToken })
+      );
+
+      const rows = queryResults.ResultSet?.Rows ?? [];
+      allRows.push(...rows);
+      nextToken = queryResults.NextToken;
+    } while (nextToken);
+
+    if (allRows.length === 0) {
       return [];
     }
 
-    const firstRow = rows[0];
+    const firstRow = allRows[0];
     if (!firstRow?.Data) {
       return [];
     }
 
     const headers = firstRow.Data.map((col) => col.VarCharValue ?? '');
-    return rows.slice(1).map((row) => {
+    return allRows.slice(1).map((row) => {
       const obj: Record<string, unknown> = {};
       row.Data?.forEach((col, i) => {
         const header = headers[i];
