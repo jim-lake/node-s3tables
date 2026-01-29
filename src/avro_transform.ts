@@ -173,8 +173,8 @@ export function makeBounds(
   });
 }
 export function compareBounds(
-  a: Buffer,
-  b: Buffer,
+  a: Buffer | Uint8Array,
+  b: Buffer | Uint8Array,
   field: IcebergPartitionField,
   schema: IcebergSchema
 ): number {
@@ -187,17 +187,18 @@ export function compareBounds(
   const out_type = _outputType(field.transform, schemaField.type);
   switch (out_type) {
     case 'boolean':
-      return a.readUInt8() - b.readUInt8();
+      return Buffer.from(a).readUInt8() - Buffer.from(b).readUInt8();
     case 'int':
-      return a.readInt32LE() - b.readInt32LE();
+      return Buffer.from(a).readInt32LE() - Buffer.from(b).readInt32LE();
     case 'long': {
-      const diff = a.readBigInt64LE() - b.readBigInt64LE();
+      const diff =
+        Buffer.from(a).readBigInt64LE() - Buffer.from(b).readBigInt64LE();
       return diff > 0n ? 1 : diff < 0n ? -1 : 0;
     }
     case 'float':
-      return a.readFloatLE() - b.readFloatLE();
+      return Buffer.from(a).readFloatLE() - Buffer.from(b).readFloatLE();
     case 'double':
-      return a.readDoubleLE() - b.readDoubleLE();
+      return Buffer.from(a).readDoubleLE() - Buffer.from(b).readDoubleLE();
     case null:
     case 'date':
     case 'time':
