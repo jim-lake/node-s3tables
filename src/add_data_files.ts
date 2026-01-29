@@ -19,13 +19,13 @@ export interface AddFileList {
   files: AddFile[];
 }
 export interface AddDataFilesParams {
-  credentials?: AwsCredentialIdentity;
+  credentials?: AwsCredentialIdentity | undefined;
   tableBucketARN: string;
   namespace: string;
   name: string;
   snapshotId?: bigint;
   lists: AddFileList[];
-  retryCount?: number;
+  retryCount?: number | undefined;
   maxSnapshots?: number;
 }
 export interface AddDataFilesResult {
@@ -46,14 +46,14 @@ export async function addDataFiles(
   const snapshot_id = params.snapshotId ?? _randomBigInt64();
   const metadata = await getMetadata(params);
   const bucket = metadata.location.split('/').slice(-1)[0];
+  if (!bucket) {
+    throw new Error('bad manifest location');
+  }
   const parent_snapshot_id = BigInt(metadata['current-snapshot-id']);
   const snapshot =
     metadata.snapshots.find(
       (s) => BigInt(s['snapshot-id']) === parent_snapshot_id
     ) ?? null;
-  if (!bucket) {
-    throw new Error('bad manifest location');
-  }
   if (parent_snapshot_id > 0n && !snapshot) {
     throw new Error('no old snapshot');
   }

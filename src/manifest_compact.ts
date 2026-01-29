@@ -8,6 +8,7 @@ import {
   makeManifestType,
 } from './avro_schema';
 import { ListContent } from './avro_types';
+import { minBuffer, maxBuffer } from './manifest';
 import { getMetadata } from './metadata';
 import { parseS3Url, downloadAvro, streamWriteAvro } from './s3_tools';
 import { submitSnapshot } from './snapshot';
@@ -232,14 +233,15 @@ interface CombineGroupParams {
 async function _combineGroup(
   params: CombineGroupParams
 ): Promise<ManifestListRecord[]> {
-  const { credentials, region, bucket, group } = params;
+  const { credentials, region, bucket, group, spec } = params;
   const record0 = group[0];
   if ((group.length === 1 && !params.forceRewrite) || !record0) {
     return group;
   }
   const key = `metadata/${randomUUID()}.avro`;
-  const schema = makeManifestSchema(params.spec, params.schemas, true);
-  const type = makeManifestType(params.spec, params.schemas, true);
+  const icebergSchema = _schemaForSpec(params.schemas, spec);
+  const schema = makeManifestSchema(spec, params.schemas, true);
+  const type = makeManifestType(spec, params.schemas, true);
   const iter = asyncIterMap(group, ITER_LIMIT, async (record) => {
     return _streamReadManifest({
       credentials,
@@ -255,8 +257,8 @@ async function _combineGroup(
     bucket,
     key,
     metadata: {
-      'partition-spec-id': String(params.spec['spec-id']),
-      'partition-spec': JSON.stringify(params.spec.fields),
+      'partition-spec-id': String(spec['spec-id']),
+      'partition-spec': JSON.stringify(spec.fields),
     },
     avroType: type,
     iter,
@@ -295,26 +297,26 @@ async function _combineGroup(
       for (let j = 0; j < parts.length; j++) {
         const part = parts[j];
         const ret_part = ret.partitions[j];
-        if (part && ret_part) {
+        const field = spec.fields[i];
+        if (part && ret_part && field) {
           ret_part.contains_null ||= part.contains_null;
           if (part.contains_nan !== undefined) {
             ret_part.contains_nan =
               (ret_part.contains_nan ?? false) || part.contains_nan;
           }
-          if (
-            !ret_part.upper_bound ||
-            (part.upper_bound &&
-              Buffer.compare(part.upper_bound, ret_part.upper_bound) > 0)
-          ) {
-            ret_part.upper_bound = part.upper_bound ?? null;
-          }
-          if (
-            !ret_part.lower_bound ||
-            (part.lower_bound &&
-              Buffer.compare(part.lower_bound, ret_part.lower_bound) < 0)
-          ) {
-            ret_part.lower_bound = part.lower_bound ?? null;
-          }
+
+          ret_part.upper_bound = maxBuffer(
+            ret_part.upper_bound,
+            part.upper_bound,
+            field,
+            icebergSchema
+          );
+          ret_part.lower_bound = minBuffer(
+            ret_part.lower_bound,
+            part.lower_bound,
+            field,
+            icebergSchema
+          );
         }
       }
     } else if (parts) {
@@ -420,6 +422,21 @@ interface WeightedObject {
 }
 function _sortGroup(a: WeightedObject, b: WeightedObject) {
   return a.weight - b.weight;
+}
+function _schemaForSpec(
+  schemas: IcebergSchema[],
+  spec: IcebergPartitionSpec
+): IcebergSchema {
+  for (const schema of schemas) {
+    if (
+      spec.fields.every((f) =>
+        schema.fields.find((f2) => f2.id === f['source-id'])
+      )
+    ) {
+      return schema;
+    }
+  }
+  throw new Error(`schema not found for spec: ${spec['spec-id']}`);
 }
 function _randomBigInt64(): bigint {
   const bytes = randomBytes(8);

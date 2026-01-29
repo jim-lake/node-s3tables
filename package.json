@@ -5,12 +5,13 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "node-s3tables": "dist/bin-compact.js"
+    "node-s3tables": "dist/bin.js"
   },
   "files": [
     "dist/**/*"
   ],
   "scripts": {
+    "bin": "tsx src/bin.ts",
     "build": "rollup -c",
     "ts:check": "tsc --noEmit",
     "lint": "eslint src test --fix",

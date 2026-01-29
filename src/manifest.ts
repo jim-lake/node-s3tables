@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { avroToBuffer } from './avro_helper';
 import { makeManifestType } from './avro_schema';
-import { makeBounds } from './avro_transform';
+import { makeBounds, compareBounds } from './avro_transform';
 import { writeS3File } from './s3_tools';
 import { ManifestFileStatus, DataFileContent, ListContent } from './avro_types';
 
@@ -12,7 +12,11 @@ import type {
   PartitionRecord,
   PartitionSummary,
 } from './avro_types';
-import type { IcebergMetadata, IcebergSchema } from './iceberg';
+import type {
+  IcebergMetadata,
+  IcebergPartitionField,
+  IcebergSchema,
+} from './iceberg';
 
 export interface AddFile {
   file: string;
@@ -77,13 +81,24 @@ export async function addManifest(
     for (let i = 0; i < partitions.length; i++) {
       const part = partitions[i];
       const bound = bounds[i];
-      if (!part) {
+      const field = spec.fields[i];
+      if (!part || !field) {
         throw new Error('impossible');
       } else if (bound === null) {
         part.contains_null = true;
       } else if (Buffer.isBuffer(bound)) {
-        part.upper_bound = _maxBuffer(part.upper_bound ?? null, bound);
-        part.lower_bound = _minBuffer(part.lower_bound ?? null, bound);
+        part.upper_bound = maxBuffer(
+          part.upper_bound ?? null,
+          bound,
+          field,
+          schema
+        );
+        part.lower_bound = minBuffer(
+          part.lower_bound ?? null,
+          bound,
+          field,
+          schema
+        );
       } else {
         part.contains_nan = true;
       }
@@ -165,23 +180,33 @@ function _transformRecord<T>(
   }
   return ret.length > 0 ? ret : null;
 }
-function _minBuffer(a: Buffer | null, b: Buffer | null): Buffer | null {
-  if (!a && !b) {
-    return null;
-  } else if (!a) {
-    return b;
-  } else if (!b) {
+export function minBuffer(
+  a: Buffer | null | undefined,
+  b: Buffer | null | undefined,
+  field: IcebergPartitionField,
+  schema: IcebergSchema
+): Buffer | null {
+  if (a && b) {
+    return compareBounds(a, b, field, schema) <= 0 ? a : b;
+  } else if (a) {
     return a;
+  } else if (b) {
+    return b;
   }
-  return Buffer.compare(a, b) <= 0 ? a : b;
+  return null;
 }
-function _maxBuffer(a: Buffer | null, b: Buffer | null): Buffer | null {
-  if (!a && !b) {
-    return null;
-  } else if (!a) {
-    return b;
-  } else if (!b) {
+export function maxBuffer(
+  a: Buffer | null | undefined,
+  b: Buffer | null | undefined,
+  field: IcebergPartitionField,
+  schema: IcebergSchema
+): Buffer | null {
+  if (a && b) {
+    return compareBounds(a, b, field, schema) >= 0 ? a : b;
+  } else if (a) {
     return a;
+  } else if (b) {
+    return b;
   }
-  return Buffer.compare(a, b) >= 0 ? a : b;
+  return null;
 }

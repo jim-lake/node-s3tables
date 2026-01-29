@@ -4,6 +4,7 @@ import type {
   IcebergSchema,
   IcebergTransform,
   IcebergType,
+  IcebergPartitionField,
   IcebergPrimitiveType,
 } from './iceberg';
 
@@ -170,4 +171,42 @@ export function makeBounds(
     const out_type = _outputType(f.transform, schemaField.type);
     return _encodeValue(raw, f.transform, out_type);
   });
+}
+export function compareBounds(
+  a: Buffer,
+  b: Buffer,
+  field: IcebergPartitionField,
+  schema: IcebergSchema
+): number {
+  const schemaField = schema.fields.find((sf) => sf.id === field['source-id']);
+  if (!schemaField) {
+    throw new Error(
+      `Schema field not found for source-id ${field['source-id']}`
+    );
+  }
+  const out_type = _outputType(field.transform, schemaField.type);
+  switch (out_type) {
+    case 'boolean':
+      return a.readUInt8() - b.readUInt8();
+    case 'int':
+      return a.readInt32LE() - b.readInt32LE();
+    case 'long': {
+      const diff = a.readBigInt64LE() - b.readBigInt64LE();
+      return diff > 0n ? 1 : diff < 0n ? -1 : 0;
+    }
+    case 'float':
+      return a.readFloatLE() - b.readFloatLE();
+    case 'double':
+      return a.readDoubleLE() - b.readDoubleLE();
+    case null:
+    case 'date':
+    case 'time':
+    case 'timestamp':
+    case 'timestamptz':
+    case 'string':
+    case 'uuid':
+    case 'binary':
+    default:
+      return Buffer.compare(a, b);
+  }
 }
