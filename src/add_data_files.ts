@@ -3,16 +3,15 @@ import { avroToBuffer } from './avro_helper';
 import { ManifestListType } from './avro_schema';
 import { addManifest } from './manifest';
 import { getMetadata } from './metadata';
-import { icebergRequest, IcebergHttpError } from './request';
 import { parseS3Url, writeS3File, updateManifestList } from './s3_tools';
+import { submitSnapshot } from './snapshot';
 
 import type { AwsCredentialIdentity } from '@aws-sdk/types';
-import type { JSONObject, JSONArray } from './json';
 import type { AddFile } from './manifest';
+import type { IcebergSnapshot } from './iceberg';
+import type { JSONObject } from './json';
 
 export default { addDataFiles };
-
-const DEFAULT_RETRY_COUNT = 5;
 
 export interface AddFileList {
   specId: number;
@@ -40,7 +39,6 @@ export async function addDataFiles(
   params: AddDataFilesParams
 ): Promise<AddDataFilesResult> {
   const { credentials } = params;
-  const retry_max = params.retryCount ?? DEFAULT_RETRY_COUNT;
   const region = params.tableBucketARN.split(':')[3];
   if (!region) {
     throw new Error('bad tableBucketARN');
@@ -99,11 +97,16 @@ export async function addDataFiles(
       return addManifest(opts);
     })
   );
-  let expected_snapshot_id = parent_snapshot_id;
 
-  for (let try_count = 0; ; try_count++) {
+  async function createManifestList() {
+    if (!bucket) {
+      throw new Error('bad manifest location');
+    }
+    if (!region) {
+      throw new Error('bad tableBucketARN');
+    }
     const manifest_list_key = `metadata/${randomUUID()}.avro`;
-    const manifest_list_url = `s3://${bucket}/${manifest_list_key}`;
+    const url = `s3://${bucket}/${manifest_list_key}`;
     if (old_list_key) {
       await updateManifestList({
         credentials,
@@ -136,91 +139,12 @@ export async function addDataFiles(
         body: manifest_list_buf,
       });
     }
-    try {
-      const updates: JSONArray = [
-        {
-          action: 'add-snapshot',
-          snapshot: {
-            'sequence-number': sequence_number,
-            'snapshot-id': snapshot_id,
-            'parent-snapshot-id': parent_snapshot_id,
-            'timestamp-ms': Date.now(),
-            summary: {
-              operation: 'append',
-              'added-data-files': String(added_files),
-              'added-records': String(added_records),
-              'added-files-size': String(added_size),
-            },
-            'manifest-list': manifest_list_url,
-            'schema-id': metadata['current-schema-id'],
-          },
-        },
-        {
-          action: 'set-snapshot-ref',
-          'snapshot-id': snapshot_id,
-          type: 'branch',
-          'ref-name': 'main',
-        },
-      ];
-      if (remove_snapshot_id > 0n) {
-        updates.push({
-          action: 'remove-snapshots',
-          'snapshot-ids': [remove_snapshot_id],
-        });
-      }
-      const result = await icebergRequest({
-        credentials: params.credentials,
-        tableBucketARN: params.tableBucketARN,
-        method: 'POST',
-        suffix: `/namespaces/${params.namespace}/tables/${params.name}`,
-        body: {
-          requirements:
-            expected_snapshot_id > 0n
-              ? [
-                  {
-                    type: 'assert-ref-snapshot-id',
-                    ref: 'main',
-                    'snapshot-id': expected_snapshot_id,
-                  },
-                ]
-              : [],
-          updates,
-        },
-      });
-      return {
-        result,
-        retriesNeeded: try_count,
-        parentSnapshotId: parent_snapshot_id,
-        snapshotId: snapshot_id,
-        sequenceNumber: sequence_number,
-      };
-    } catch (e) {
-      if (
-        e instanceof IcebergHttpError &&
-        e.status === 409 &&
-        try_count < retry_max
-      ) {
-        // retry case
-        remove_snapshot_id = 0n;
-      } else {
-        throw e;
-      }
-    }
+    return url;
+  }
 
-    // we do a merge in the append only simultanious case
-    const conflict_metadata = await getMetadata(params);
-    const conflict_snapshot_id = BigInt(
-      conflict_metadata['current-snapshot-id']
-    );
-    if (conflict_snapshot_id <= 0n) {
-      throw new Error('conflict');
-    }
-    const conflict_snap = conflict_metadata.snapshots.find(
-      (s) => s['snapshot-id'] === conflict_snapshot_id
-    );
-    if (!conflict_snap) {
-      throw new Error('conflict');
-    }
+  const manifest_list_url = await createManifestList();
+
+  async function resolveConflict(conflict_snap: IcebergSnapshot) {
     if (
       conflict_snap.summary.operation === 'append' &&
       BigInt(conflict_snap['sequence-number']) === sequence_number
@@ -235,13 +159,42 @@ export async function addDataFiles(
       );
       added_records += BigInt(conflict_snap.summary['added-records'] ?? '0');
       added_size += BigInt(conflict_snap.summary['added-files-size'] ?? '0');
-
-      expected_snapshot_id = conflict_snapshot_id;
       sequence_number++;
-    } else {
-      throw new Error('conflict');
+
+      const url = await createManifestList();
+      return {
+        manifestListUrl: url,
+        summary: {
+          operation: 'append',
+          'added-data-files': String(added_files),
+          'added-records': String(added_records),
+          'added-files-size': String(added_size),
+        },
+      };
     }
+    throw new Error('conflict');
   }
+
+  return submitSnapshot({
+    credentials,
+    tableBucketARN: params.tableBucketARN,
+    namespace: params.namespace,
+    name: params.name,
+    currentSchemaId: metadata['current-schema-id'],
+    parentSnapshotId: parent_snapshot_id,
+    snapshotId: snapshot_id,
+    sequenceNumber: sequence_number,
+    retryCount: params.retryCount,
+    removeSnapshotId: remove_snapshot_id,
+    manifestListUrl: manifest_list_url,
+    summary: {
+      operation: 'append',
+      'added-data-files': String(added_files),
+      'added-records': String(added_records),
+      'added-files-size': String(added_size),
+    },
+    resolveConflict,
+  });
 }
 function _randomBigInt64(): bigint {
   const bytes = randomBytes(8);
