@@ -115,7 +115,6 @@ if (command === 'compact') {
     });
 } else if (command === 'import_redshift') {
   const redshiftManifestUrl = values['redshift-manifest-url'];
-  console.log(values);
   if (!redshiftManifestUrl) {
     console.error(
       'Error: Missing required options for import_redshift command\n'
