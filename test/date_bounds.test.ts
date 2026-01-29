@@ -110,6 +110,7 @@ void test('date partition bounds test', async (t) => {
     const manifestListPath = snapshot['manifest-list'];
     const { bucket, key } = parseS3Url(manifestListPath);
 
+    assert(config.region, 'No region configured');
     const s3Client = getS3Client({ region: config.region });
     const cmd = new GetObjectCommand({ Bucket: bucket, Key: key });
     const response = await s3Client.send(cmd);
@@ -140,6 +141,7 @@ void test('date partition bounds test', async (t) => {
 
     assert.strictEqual(records.length, 1, 'Expected 1 manifest');
     const manifest = records[0];
+    assert(manifest, 'No manifest record');
 
     assert(manifest.partitions, 'No partitions in manifest');
     assert.strictEqual(
@@ -149,6 +151,7 @@ void test('date partition bounds test', async (t) => {
     );
 
     const partition = manifest.partitions[0];
+    assert(partition, 'No partition record');
     assert(partition.lower_bound, 'No lower_bound');
     assert(partition.upper_bound, 'No upper_bound');
 
