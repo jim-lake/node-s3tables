@@ -120,6 +120,51 @@ interface AddManifestParams {
     files: AddFile[];
 }
 declare function addManifest(params: AddManifestParams): Promise<ManifestListRecord>;
+declare function minBuffer(a: Buffer | null | undefined, b: Buffer | null | undefined, field: IcebergPartitionField, schema: IcebergSchema): Buffer | null;
+declare function maxBuffer(a: Buffer | null | undefined, b: Buffer | null | undefined, field: IcebergPartitionField, schema: IcebergSchema): Buffer | null;
+
+type JSONPrimitive = string | number | boolean | null | bigint | undefined;
+type JSONValue = JSONPrimitive | JSONObject | JSONArray;
+interface JSONObject {
+    [key: string]: JSONValue;
+}
+type JSONArray = JSONValue[];
+
+interface AddFileList {
+    specId: number;
+    schemaId: number;
+    files: AddFile[];
+}
+interface AddDataFilesParams {
+    credentials?: AwsCredentialIdentity | undefined;
+    tableBucketARN: string;
+    namespace: string;
+    name: string;
+    snapshotId?: bigint;
+    lists: AddFileList[];
+    retryCount?: number | undefined;
+    maxSnapshots?: number;
+}
+interface AddDataFilesResult {
+    result: JSONObject;
+    retriesNeeded: number;
+    parentSnapshotId: bigint;
+    snapshotId: bigint;
+    sequenceNumber: bigint;
+}
+declare function addDataFiles(params: AddDataFilesParams): Promise<AddDataFilesResult>;
+
+interface ImportRedshiftManifestParams {
+    credentials?: AwsCredentialIdentity;
+    tableBucketARN: string;
+    namespace: string;
+    name: string;
+    redshiftManifestUrl: string;
+    schemaId?: number;
+    specId?: number;
+    retryCount?: number | undefined;
+}
+declare function importRedshiftManifest(params: ImportRedshiftManifestParams): Promise<AddDataFilesResult>;
 
 type TableLocation = {
     tableArn: string;
@@ -164,36 +209,12 @@ interface RemoveSnapshotsParams {
 }
 declare function removeSnapshots(params: RemoveSnapshotsParams): Promise<IcebergUpdateResponse>;
 
-type JSONPrimitive = string | number | boolean | null | bigint | undefined;
-type JSONValue = JSONPrimitive | JSONObject | JSONArray;
-interface JSONObject {
-    [key: string]: JSONValue;
+declare class IcebergHttpError extends Error {
+    status: number;
+    text?: string;
+    body?: JSONObject;
+    constructor(status: number, body: JSONValue, message: string);
 }
-type JSONArray = JSONValue[];
-
-interface AddFileList {
-    specId: number;
-    schemaId: number;
-    files: AddFile[];
-}
-interface AddDataFilesParams {
-    credentials?: AwsCredentialIdentity;
-    tableBucketARN: string;
-    namespace: string;
-    name: string;
-    snapshotId?: bigint;
-    lists: AddFileList[];
-    retryCount?: number;
-    maxSnapshots?: number;
-}
-interface AddDataFilesResult {
-    result: JSONObject;
-    retriesNeeded: number;
-    parentSnapshotId: bigint;
-    snapshotId: bigint;
-    sequenceNumber: bigint;
-}
-declare function addDataFiles(params: AddDataFilesParams): Promise<AddDataFilesResult>;
 
 interface SubmitSnapshotParams {
     credentials?: AwsCredentialIdentity | undefined;
@@ -231,13 +252,6 @@ interface SetCurrentCommitParams {
 }
 declare function setCurrentCommit(params: SetCurrentCommitParams): Promise<JSONObject>;
 
-declare class IcebergHttpError extends Error {
-    status: number;
-    text?: string;
-    body?: JSONObject;
-    constructor(status: number, body: JSONValue, message: string);
-}
-
 type CalculateWeightFunction = (group: ManifestListRecord[]) => number;
 interface ManifestCompactParams {
     credentials?: AwsCredentialIdentity;
@@ -253,20 +267,22 @@ interface ManifestCompactParams {
 }
 interface ManifestCompactResult extends SubmitSnapshotResult {
     changed: boolean;
+    inputManifestCount: number;
     outputManifestCount: number;
 }
 declare function manifestCompact(params: ManifestCompactParams): Promise<ManifestCompactResult>;
 
 declare const _default: {
     IcebergHttpError: typeof IcebergHttpError;
-    getMetadata: typeof getMetadata;
     addSchema: typeof addSchema;
     addPartitionSpec: typeof addPartitionSpec;
     addManifest: typeof addManifest;
     addDataFiles: typeof addDataFiles;
-    setCurrentCommit: typeof setCurrentCommit;
+    getMetadata: typeof getMetadata;
+    importRedshiftManifest: typeof importRedshiftManifest;
     removeSnapshots: typeof removeSnapshots;
+    setCurrentCommit: typeof setCurrentCommit;
 };
 
-export { IcebergHttpError, addDataFiles, addManifest, addPartitionSpec, addSchema, _default as default, getMetadata, manifestCompact, removeSnapshots, setCurrentCommit, submitSnapshot };
-export type { AddDataFilesParams, AddDataFilesResult, AddFile, AddFileList, AddManifestParams, AddPartitionSpecParams, AddSchemaParams, CalculateWeightFunction, GetMetadataParams, IcebergComplexType, IcebergMetadata, IcebergPartitionField, IcebergPartitionSpec, IcebergPrimitiveType, IcebergSchema, IcebergSchemaField, IcebergSnapshot, IcebergSnapshotSummary, IcebergTransform, IcebergType, IcebergUpdateResponse, ManifestCompactParams, ManifestCompactResult, ManifestListRecord, RemoveSnapshotsParams, ResolveConflictResult, SetCurrentCommitParams, SubmitSnapshotParams, SubmitSnapshotResult, TableLocation };
+export { IcebergHttpError, addDataFiles, addManifest, addPartitionSpec, addSchema, _default as default, getMetadata, importRedshiftManifest, manifestCompact, maxBuffer, minBuffer, removeSnapshots, setCurrentCommit, submitSnapshot };
+export type { AddDataFilesParams, AddDataFilesResult, AddFile, AddFileList, AddManifestParams, AddPartitionSpecParams, AddSchemaParams, CalculateWeightFunction, GetMetadataParams, IcebergComplexType, IcebergMetadata, IcebergPartitionField, IcebergPartitionSpec, IcebergPrimitiveType, IcebergSchema, IcebergSchemaField, IcebergSnapshot, IcebergSnapshotSummary, IcebergTransform, IcebergType, IcebergUpdateResponse, ImportRedshiftManifestParams, ManifestCompactParams, ManifestCompactResult, ManifestListRecord, RemoveSnapshotsParams, ResolveConflictResult, SetCurrentCommitParams, SubmitSnapshotParams, SubmitSnapshotResult, TableLocation };

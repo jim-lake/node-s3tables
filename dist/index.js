@@ -803,6 +803,37 @@ function makeBounds(partitions, spec, schema) {
         return _encodeValue(raw, f.transform, out_type);
     });
 }
+function compareBounds(a, b, field, schema) {
+    const schemaField = schema.fields.find((sf) => sf.id === field['source-id']);
+    if (!schemaField) {
+        throw new Error(`Schema field not found for source-id ${field['source-id']}`);
+    }
+    const out_type = _outputType(field.transform, schemaField.type);
+    switch (out_type) {
+        case 'boolean':
+            return Buffer.from(a).readUInt8() - Buffer.from(b).readUInt8();
+        case 'int':
+            return Buffer.from(a).readInt32LE() - Buffer.from(b).readInt32LE();
+        case 'long': {
+            const diff = Buffer.from(a).readBigInt64LE() - Buffer.from(b).readBigInt64LE();
+            return diff > 0n ? 1 : diff < 0n ? -1 : 0;
+        }
+        case 'float':
+            return Buffer.from(a).readFloatLE() - Buffer.from(b).readFloatLE();
+        case 'double':
+            return Buffer.from(a).readDoubleLE() - Buffer.from(b).readDoubleLE();
+        case null:
+        case 'date':
+        case 'time':
+        case 'timestamp':
+        case 'timestamptz':
+        case 'string':
+        case 'uuid':
+        case 'binary':
+        default:
+            return Buffer.compare(a, b);
+    }
+}
 
 function isRawRecordSchema(schema) {
     return (typeof schema === 'object' &&
@@ -957,6 +988,13 @@ function parseS3Url(url) {
 }
 const g_s3Map = new Map();
 const g_s3TablesMap = new Map();
+class ByteCounter extends node_stream.Transform {
+    bytes = 0;
+    _transform(chunk, _encoding, callback) {
+        this.bytes += chunk.length;
+        callback(null, chunk);
+    }
+}
 function getS3Client(params) {
     const { region, credentials } = params;
     let ret = g_s3Map.get(region)?.get(credentials);
@@ -1085,26 +1123,32 @@ async function streamWriteAvro(params) {
         codecs: { deflate: zlib__namespace.deflateRaw },
         metadata,
     });
+    const counter = new ByteCounter();
+    encoder.pipe(counter);
     const upload = new libStorage.Upload({
         client: s3,
-        params: { Bucket: bucket, Key: key, Body: encoder },
+        params: { Bucket: bucket, Key: key, Body: counter },
     });
-    let file_size = 0;
-    upload.on('httpUploadProgress', (progress) => {
-        if (progress.loaded) {
-            file_size = progress.loaded;
+    async function _abortUpload() {
+        try {
+            await upload.abort();
         }
-    });
+        catch {
+            // noop
+        }
+    }
     const upload_promise = upload.done();
     let found_err;
     upload_promise.catch((err) => {
-        found_err = err;
+        found_err ??= err;
     });
     encoder.on('error', (err) => {
-        found_err = err;
+        found_err ??= err;
+        void _abortUpload();
     });
     for await (const batch of params.iter) {
         if (found_err) {
+            void _abortUpload();
             throw found_err;
         }
         for (const record of batch) {
@@ -1114,9 +1158,10 @@ async function streamWriteAvro(params) {
     encoder.end();
     await upload_promise;
     if (found_err) {
+        void _abortUpload();
         throw found_err;
     }
-    return file_size;
+    return counter.bytes;
 }
 async function downloadAvro(params) {
     const { region, credentials, bucket, key, avroSchema } = params;
@@ -1188,15 +1233,16 @@ async function addManifest(params) {
         for (let i = 0; i < partitions.length; i++) {
             const part = partitions[i];
             const bound = bounds[i];
-            if (!part) {
+            const field = spec.fields[i];
+            if (!part || !field) {
                 throw new Error('impossible');
             }
             else if (bound === null) {
                 part.contains_null = true;
             }
             else if (Buffer.isBuffer(bound)) {
-                part.upper_bound = _maxBuffer(part.upper_bound ?? null, bound);
-                part.lower_bound = _minBuffer(part.lower_bound ?? null, bound);
+                part.upper_bound = maxBuffer(part.upper_bound ?? null, bound, field, schema);
+                part.lower_bound = minBuffer(part.lower_bound ?? null, bound, field, schema);
             }
             else {
                 part.contains_nan = true;
@@ -1275,29 +1321,29 @@ function _transformRecord(schema, map) {
     }
     return ret.length > 0 ? ret : null;
 }
-function _minBuffer(a, b) {
-    if (!a && !b) {
-        return null;
+function minBuffer(a, b, field, schema) {
+    if (a && b) {
+        return compareBounds(a, b, field, schema) <= 0 ? a : b;
     }
-    else if (!a) {
-        return b;
-    }
-    else if (!b) {
+    else if (a) {
         return a;
     }
-    return Buffer.compare(a, b) <= 0 ? a : b;
+    else if (b) {
+        return b;
+    }
+    return null;
 }
-function _maxBuffer(a, b) {
-    if (!a && !b) {
-        return null;
+function maxBuffer(a, b, field, schema) {
+    if (a && b) {
+        return compareBounds(a, b, field, schema) >= 0 ? a : b;
     }
-    else if (!a) {
-        return b;
-    }
-    else if (!b) {
+    else if (a) {
         return a;
     }
-    return Buffer.compare(a, b) >= 0 ? a : b;
+    else if (b) {
+        return b;
+    }
+    return null;
 }
 
 function customNumberParser(value) {
@@ -1473,205 +1519,6 @@ async function removeSnapshots(params) {
     });
 }
 
-const DEFAULT_RETRY_COUNT$1 = 5;
-async function addDataFiles(params) {
-    const { credentials } = params;
-    const retry_max = params.retryCount ?? DEFAULT_RETRY_COUNT$1;
-    const region = params.tableBucketARN.split(':')[3];
-    if (!region) {
-        throw new Error('bad tableBucketARN');
-    }
-    const snapshot_id = params.snapshotId ?? _randomBigInt64$1();
-    const metadata = await getMetadata(params);
-    const bucket = metadata.location.split('/').slice(-1)[0];
-    const parent_snapshot_id = BigInt(metadata['current-snapshot-id']);
-    const snapshot = metadata.snapshots.find((s) => BigInt(s['snapshot-id']) === parent_snapshot_id) ?? null;
-    if (!bucket) {
-        throw new Error('bad manifest location');
-    }
-    if (parent_snapshot_id > 0n && !snapshot) {
-        throw new Error('no old snapshot');
-    }
-    let old_list_key = snapshot ? parseS3Url(snapshot['manifest-list']).key : '';
-    if (snapshot && !old_list_key) {
-        throw new Error('last snapshot invalid');
-    }
-    let sequence_number = BigInt(metadata['last-sequence-number']) + 1n;
-    let remove_snapshot_id = 0n;
-    if (params.maxSnapshots && metadata.snapshots.length >= params.maxSnapshots) {
-        let earliest_time = 0;
-        for (const snap of metadata.snapshots) {
-            const snap_time = snap['timestamp-ms'];
-            if (earliest_time === 0 || snap_time < earliest_time) {
-                earliest_time = snap_time;
-                remove_snapshot_id = BigInt(snap['snapshot-id']);
-            }
-        }
-    }
-    let added_files = 0;
-    let added_records = 0n;
-    let added_size = 0n;
-    const records = await Promise.all(params.lists.map(async (list) => {
-        added_files += list.files.length;
-        for (const file of list.files) {
-            added_records += file.recordCount;
-            added_size += file.fileSize;
-        }
-        const opts = {
-            credentials,
-            region,
-            metadata,
-            schemaId: list.schemaId,
-            specId: list.specId,
-            snapshotId: snapshot_id,
-            sequenceNumber: sequence_number,
-            files: list.files,
-        };
-        return addManifest(opts);
-    }));
-    let expected_snapshot_id = parent_snapshot_id;
-    for (let try_count = 0;; try_count++) {
-        const manifest_list_key = `metadata/${node_crypto.randomUUID()}.avro`;
-        const manifest_list_url = `s3://${bucket}/${manifest_list_key}`;
-        if (old_list_key) {
-            await updateManifestList({
-                credentials,
-                region,
-                bucket,
-                key: old_list_key,
-                outKey: manifest_list_key,
-                metadata: {
-                    'sequence-number': String(sequence_number),
-                    'snapshot-id': String(snapshot_id),
-                    'parent-snapshot-id': String(parent_snapshot_id),
-                },
-                prepend: records,
-            });
-        }
-        else {
-            const manifest_list_buf = await avroToBuffer({
-                type: ManifestListType,
-                metadata: {
-                    'sequence-number': String(sequence_number),
-                    'snapshot-id': String(snapshot_id),
-                    'parent-snapshot-id': 'null',
-                },
-                records,
-            });
-            await writeS3File({
-                credentials,
-                region,
-                bucket,
-                key: manifest_list_key,
-                body: manifest_list_buf,
-            });
-        }
-        try {
-            const updates = [
-                {
-                    action: 'add-snapshot',
-                    snapshot: {
-                        'sequence-number': sequence_number,
-                        'snapshot-id': snapshot_id,
-                        'parent-snapshot-id': parent_snapshot_id,
-                        'timestamp-ms': Date.now(),
-                        summary: {
-                            operation: 'append',
-                            'added-data-files': String(added_files),
-                            'added-records': String(added_records),
-                            'added-files-size': String(added_size),
-                        },
-                        'manifest-list': manifest_list_url,
-                        'schema-id': metadata['current-schema-id'],
-                    },
-                },
-                {
-                    action: 'set-snapshot-ref',
-                    'snapshot-id': snapshot_id,
-                    type: 'branch',
-                    'ref-name': 'main',
-                },
-            ];
-            if (remove_snapshot_id > 0n) {
-                updates.push({
-                    action: 'remove-snapshots',
-                    'snapshot-ids': [remove_snapshot_id],
-                });
-            }
-            const result = await icebergRequest({
-                credentials: params.credentials,
-                tableBucketARN: params.tableBucketARN,
-                method: 'POST',
-                suffix: `/namespaces/${params.namespace}/tables/${params.name}`,
-                body: {
-                    requirements: expected_snapshot_id > 0n
-                        ? [
-                            {
-                                type: 'assert-ref-snapshot-id',
-                                ref: 'main',
-                                'snapshot-id': expected_snapshot_id,
-                            },
-                        ]
-                        : [],
-                    updates,
-                },
-            });
-            return {
-                result,
-                retriesNeeded: try_count,
-                parentSnapshotId: parent_snapshot_id,
-                snapshotId: snapshot_id,
-                sequenceNumber: sequence_number,
-            };
-        }
-        catch (e) {
-            if (e instanceof IcebergHttpError &&
-                e.status === 409 &&
-                try_count < retry_max) {
-                // retry case
-                remove_snapshot_id = 0n;
-            }
-            else {
-                throw e;
-            }
-        }
-        // we do a merge in the append only simultanious case
-        const conflict_metadata = await getMetadata(params);
-        const conflict_snapshot_id = BigInt(conflict_metadata['current-snapshot-id']);
-        if (conflict_snapshot_id <= 0n) {
-            throw new Error('conflict');
-        }
-        const conflict_snap = conflict_metadata.snapshots.find((s) => s['snapshot-id'] === conflict_snapshot_id);
-        if (!conflict_snap) {
-            throw new Error('conflict');
-        }
-        if (conflict_snap.summary.operation === 'append' &&
-            BigInt(conflict_snap['sequence-number']) === sequence_number) {
-            old_list_key = parseS3Url(conflict_snap['manifest-list']).key;
-            if (!old_list_key) {
-                throw new Error('conflict');
-            }
-            added_files += parseInt(conflict_snap.summary['added-data-files'] ?? '0', 10);
-            added_records += BigInt(conflict_snap.summary['added-records'] ?? '0');
-            added_size += BigInt(conflict_snap.summary['added-files-size'] ?? '0');
-            expected_snapshot_id = conflict_snapshot_id;
-            sequence_number++;
-        }
-        else {
-            throw new Error('conflict');
-        }
-    }
-}
-function _randomBigInt64$1() {
-    const bytes = node_crypto.randomBytes(8);
-    let ret = bytes.readBigUInt64BE();
-    ret &= BigInt('0x7FFFFFFFFFFFFFFF');
-    if (ret === 0n) {
-        ret = 1n;
-    }
-    return ret;
-}
-
 const DEFAULT_RETRY_COUNT = 5;
 async function submitSnapshot(params) {
     const { snapshotId, parentSnapshotId, resolveConflict } = params;
@@ -1793,26 +1640,296 @@ async function setCurrentCommit(params) {
     return commit_result;
 }
 
-async function* asyncIterMap(items, func) {
+async function addDataFiles(params) {
+    const { credentials } = params;
+    const region = params.tableBucketARN.split(':')[3];
+    if (!region) {
+        throw new Error('bad tableBucketARN');
+    }
+    const snapshot_id = params.snapshotId ?? _randomBigInt64$1();
+    const metadata = await getMetadata(params);
+    const bucket = metadata.location.split('/').slice(-1)[0];
+    if (!bucket) {
+        throw new Error('bad manifest location');
+    }
+    const parent_snapshot_id = BigInt(metadata['current-snapshot-id']);
+    const snapshot = metadata.snapshots.find((s) => BigInt(s['snapshot-id']) === parent_snapshot_id) ?? null;
+    if (parent_snapshot_id > 0n && !snapshot) {
+        throw new Error('no old snapshot');
+    }
+    let old_list_key = snapshot ? parseS3Url(snapshot['manifest-list']).key : '';
+    if (snapshot && !old_list_key) {
+        throw new Error('last snapshot invalid');
+    }
+    let sequence_number = BigInt(metadata['last-sequence-number']) + 1n;
+    let remove_snapshot_id = 0n;
+    if (params.maxSnapshots && metadata.snapshots.length >= params.maxSnapshots) {
+        let earliest_time = 0;
+        for (const snap of metadata.snapshots) {
+            const snap_time = snap['timestamp-ms'];
+            if (earliest_time === 0 || snap_time < earliest_time) {
+                earliest_time = snap_time;
+                remove_snapshot_id = BigInt(snap['snapshot-id']);
+            }
+        }
+    }
+    let added_files = 0;
+    let added_records = 0n;
+    let added_size = 0n;
+    const records = await Promise.all(params.lists.map(async (list) => {
+        added_files += list.files.length;
+        for (const file of list.files) {
+            added_records += file.recordCount;
+            added_size += file.fileSize;
+        }
+        const opts = {
+            credentials,
+            region,
+            metadata,
+            schemaId: list.schemaId,
+            specId: list.specId,
+            snapshotId: snapshot_id,
+            sequenceNumber: sequence_number,
+            files: list.files,
+        };
+        return addManifest(opts);
+    }));
+    async function createManifestList() {
+        if (!bucket) {
+            throw new Error('bad manifest location');
+        }
+        if (!region) {
+            throw new Error('bad tableBucketARN');
+        }
+        const manifest_list_key = `metadata/${node_crypto.randomUUID()}.avro`;
+        const url = `s3://${bucket}/${manifest_list_key}`;
+        if (old_list_key) {
+            await updateManifestList({
+                credentials,
+                region,
+                bucket,
+                key: old_list_key,
+                outKey: manifest_list_key,
+                metadata: {
+                    'sequence-number': String(sequence_number),
+                    'snapshot-id': String(snapshot_id),
+                    'parent-snapshot-id': String(parent_snapshot_id),
+                },
+                prepend: records,
+            });
+        }
+        else {
+            const manifest_list_buf = await avroToBuffer({
+                type: ManifestListType,
+                metadata: {
+                    'sequence-number': String(sequence_number),
+                    'snapshot-id': String(snapshot_id),
+                    'parent-snapshot-id': 'null',
+                },
+                records,
+            });
+            await writeS3File({
+                credentials,
+                region,
+                bucket,
+                key: manifest_list_key,
+                body: manifest_list_buf,
+            });
+        }
+        return url;
+    }
+    const manifest_list_url = await createManifestList();
+    async function resolveConflict(conflict_snap) {
+        if (conflict_snap.summary.operation === 'append' &&
+            BigInt(conflict_snap['sequence-number']) === sequence_number) {
+            old_list_key = parseS3Url(conflict_snap['manifest-list']).key;
+            if (!old_list_key) {
+                throw new Error('conflict');
+            }
+            added_files += parseInt(conflict_snap.summary['added-data-files'] ?? '0', 10);
+            added_records += BigInt(conflict_snap.summary['added-records'] ?? '0');
+            added_size += BigInt(conflict_snap.summary['added-files-size'] ?? '0');
+            sequence_number++;
+            const url = await createManifestList();
+            return {
+                manifestListUrl: url,
+                summary: {
+                    operation: 'append',
+                    'added-data-files': String(added_files),
+                    'added-records': String(added_records),
+                    'added-files-size': String(added_size),
+                },
+            };
+        }
+        throw new Error('conflict');
+    }
+    return submitSnapshot({
+        credentials,
+        tableBucketARN: params.tableBucketARN,
+        namespace: params.namespace,
+        name: params.name,
+        currentSchemaId: metadata['current-schema-id'],
+        parentSnapshotId: parent_snapshot_id,
+        snapshotId: snapshot_id,
+        sequenceNumber: sequence_number,
+        retryCount: params.retryCount,
+        removeSnapshotId: remove_snapshot_id,
+        manifestListUrl: manifest_list_url,
+        summary: {
+            operation: 'append',
+            'added-data-files': String(added_files),
+            'added-records': String(added_records),
+            'added-files-size': String(added_size),
+        },
+        resolveConflict,
+    });
+}
+function _randomBigInt64$1() {
+    const bytes = node_crypto.randomBytes(8);
+    let ret = bytes.readBigUInt64BE();
+    ret &= BigInt('0x7FFFFFFFFFFFFFFF');
+    if (ret === 0n) {
+        ret = 1n;
+    }
+    return ret;
+}
+
+async function importRedshiftManifest(params) {
+    const { credentials } = params;
+    const region = params.tableBucketARN.split(':')[3];
+    if (!region) {
+        throw new Error('bad tableBucketARN');
+    }
+    const manifest = await _downloadRedshift(params);
+    const metadata = await getMetadata(params);
+    const bucket = metadata.location.split('/').slice(-1)[0];
+    if (!bucket) {
+        throw new Error('bad manifest location');
+    }
+    const import_prefix = `data/${node_crypto.randomUUID()}/`;
+    const lists = [];
+    for (const entry of manifest.entries) {
+        const { url } = entry;
+        const { content_length, record_count } = entry.meta;
+        const file = url.split('/').pop() ?? '';
+        const parts = [...url.matchAll(/\/([^=/]*=[^/=]*)/g)].map((m) => m[1] ?? '');
+        const partitions = {};
+        for (const part of parts) {
+            const [part_key, part_value] = part.split('=');
+            partitions[part_key ?? ''] = part_value ?? '';
+        }
+        const keys = Object.keys(partitions);
+        const specId = params.specId ?? _findSpec(metadata, keys);
+        const schemaId = params.schemaId ?? _findSchema(metadata, manifest);
+        let list = lists.find((l) => l.schemaId === schemaId && l.specId === specId);
+        if (!list) {
+            list = { specId, schemaId, files: [] };
+            lists.push(list);
+        }
+        const part_path = parts.length > 0 ? `${parts.join('/')}/` : '';
+        const key = import_prefix + part_path + file;
+        list.files.push({
+            file: await _maybeMoveFile({ credentials, region, bucket, key, url }),
+            partitions,
+            fileSize: BigInt(content_length),
+            recordCount: BigInt(record_count),
+        });
+    }
+    return addDataFiles({
+        credentials,
+        tableBucketARN: params.tableBucketARN,
+        namespace: params.namespace,
+        name: params.name,
+        lists,
+        retryCount: params.retryCount,
+    });
+}
+async function _downloadRedshift(params) {
+    const s3_client = getS3Client(params);
+    const { bucket, key } = parseS3Url(params.redshiftManifestUrl);
+    const get_file_cmd = new clientS3.GetObjectCommand({ Bucket: bucket, Key: key });
+    const file_response = await s3_client.send(get_file_cmd);
+    const body = await file_response.Body?.transformToString();
+    if (!body) {
+        throw new Error('missing body');
+    }
+    return parse(body);
+}
+async function _maybeMoveFile(params) {
+    const { bucket, key } = parseS3Url(params.url);
+    if (!bucket || !key) {
+        throw new Error(`bad entry url: ${params.url}`);
+    }
+    if (bucket === params.bucket) {
+        return params.url;
+    }
+    const s3_client = getS3Client(params);
+    const get = new clientS3.GetObjectCommand({ Bucket: bucket, Key: key });
+    const { Body } = await s3_client.send(get);
+    if (!Body) {
+        throw new Error(`body missing for file: ${params.url}`);
+    }
+    const upload = new libStorage.Upload({
+        client: s3_client,
+        params: { Bucket: params.bucket, Key: params.key, Body },
+    });
+    await upload.done();
+    return `s3://${params.bucket}/${params.key}`;
+}
+function _findSpec(metadata, keys) {
+    if (keys.length === 0) {
+        return 0;
+    }
+    for (const spec of metadata['partition-specs']) {
+        if (spec.fields.length === keys.length) {
+            if (keys.every((key) => spec.fields.find((f) => f.name === key))) {
+                return spec['spec-id'];
+            }
+        }
+    }
+    throw new Error(`spec not found for keys ${keys.join(', ')}`);
+}
+function _findSchema(metadata, manifest) {
+    const { elements } = manifest.schema;
+    for (const schema of metadata.schemas) {
+        if (schema.fields.every((f) => !f.required || elements.find((e) => e.name === f.name))) {
+            return schema['schema-id'];
+        }
+    }
+    throw new Error('schema not found for schema.elements');
+}
+
+async function* asyncIterMap(items, limit, func) {
     const pending = new Set();
-    for (const item of items) {
-        const ref = {};
-        const wrapper = func(item).then((value) => ({
-            self: ref.current,
-            value,
-        }));
-        ref.current = wrapper;
-        pending.add(wrapper);
+    let index = 0;
+    function enqueue() {
+        const item = items[index++];
+        if (item !== undefined) {
+            const result = { promise: undefined, value: undefined };
+            const promise = func(item).then((value) => {
+                result.value = value;
+                return result;
+            });
+            result.promise = promise;
+            pending.add(promise);
+        }
+    }
+    for (let i = 0; i < limit && i < items.length; i++) {
+        enqueue();
     }
     while (pending.size) {
-        const { self, value } = await Promise.race(pending);
-        if (self) {
-            pending.delete(self);
+        const { promise, value } = await Promise.race(pending);
+        if (promise) {
+            pending.delete(promise);
         }
-        yield value;
+        if (value !== undefined) {
+            yield value;
+        }
+        enqueue();
     }
 }
 
+const ITER_LIMIT = 10;
 async function manifestCompact(params) {
     const { credentials, targetCount, calculateWeight } = params;
     const region = params.tableBucketARN.split(':')[3];
@@ -1835,6 +1952,7 @@ async function manifestCompact(params) {
             snapshotId: 0n,
             sequenceNumber: 0n,
             changed: false,
+            inputManifestCount: 0,
             outputManifestCount: 0,
         };
     }
@@ -1901,11 +2019,12 @@ async function manifestCompact(params) {
             snapshotId: 0n,
             sequenceNumber: sequence_number,
             changed: false,
+            inputManifestCount: list.length,
             outputManifestCount: 0,
         };
     }
     const manifest_list_key = `metadata/${node_crypto.randomUUID()}.avro`;
-    const iter = asyncIterMap(final_groups, async (group) => {
+    const iter = asyncIterMap(final_groups, ITER_LIMIT, async (group) => {
         if (!group[0]) {
             return [];
         }
@@ -1966,19 +2085,21 @@ async function manifestCompact(params) {
     return {
         ...snap_result,
         changed: true,
+        inputManifestCount: list.length,
         outputManifestCount: final_groups.length,
     };
 }
 async function _combineGroup(params) {
-    const { credentials, region, bucket, group } = params;
+    const { credentials, region, bucket, group, spec } = params;
     const record0 = group[0];
     if ((group.length === 1 && !params.forceRewrite) || !record0) {
         return group;
     }
     const key = `metadata/${node_crypto.randomUUID()}.avro`;
-    const schema = makeManifestSchema(params.spec, params.schemas, true);
-    const type = makeManifestType(params.spec, params.schemas, true);
-    const iter = asyncIterMap(group, async (record) => {
+    const icebergSchema = _schemaForSpec(params.schemas, spec);
+    const schema = makeManifestSchema(spec, params.schemas, true);
+    const type = makeManifestType(spec, params.schemas, true);
+    const iter = asyncIterMap(group, ITER_LIMIT, async (record) => {
         return _streamReadManifest({
             credentials,
             region,
@@ -1993,8 +2114,8 @@ async function _combineGroup(params) {
         bucket,
         key,
         metadata: {
-            'partition-spec-id': String(params.spec['spec-id']),
-            'partition-spec': JSON.stringify(params.spec.fields),
+            'partition-spec-id': String(spec['spec-id']),
+            'partition-spec': JSON.stringify(spec.fields),
         },
         avroType: type,
         iter,
@@ -2030,22 +2151,15 @@ async function _combineGroup(params) {
             for (let j = 0; j < parts.length; j++) {
                 const part = parts[j];
                 const ret_part = ret.partitions[j];
-                if (part && ret_part) {
+                const field = spec.fields[i];
+                if (part && ret_part && field) {
                     ret_part.contains_null ||= part.contains_null;
                     if (part.contains_nan !== undefined) {
                         ret_part.contains_nan =
                             (ret_part.contains_nan ?? false) || part.contains_nan;
                     }
-                    if (!ret_part.upper_bound ||
-                        (part.upper_bound &&
-                            Buffer.compare(part.upper_bound, ret_part.upper_bound) > 0)) {
-                        ret_part.upper_bound = part.upper_bound ?? null;
-                    }
-                    if (!ret_part.lower_bound ||
-                        (part.lower_bound &&
-                            Buffer.compare(part.lower_bound, ret_part.lower_bound) < 0)) {
-                        ret_part.lower_bound = part.lower_bound ?? null;
-                    }
+                    ret_part.upper_bound = maxBuffer(ret_part.upper_bound, part.upper_bound, field, icebergSchema);
+                    ret_part.lower_bound = minBuffer(ret_part.lower_bound, part.lower_bound, field, icebergSchema);
                 }
             }
         }
@@ -2131,6 +2245,14 @@ function _combineWeightGroups(groups, targetCount, calculateWeight) {
 function _sortGroup(a, b) {
     return a.weight - b.weight;
 }
+function _schemaForSpec(schemas, spec) {
+    for (const schema of schemas) {
+        if (spec.fields.every((f) => schema.fields.find((f2) => f2.id === f['source-id']))) {
+            return schema;
+        }
+    }
+    throw new Error(`schema not found for spec: ${spec['spec-id']}`);
+}
 function _randomBigInt64() {
     const bytes = node_crypto.randomBytes(8);
     let ret = bytes.readBigUInt64BE();
@@ -2152,13 +2274,14 @@ function _bigintMin(value0, ...values) {
 
 var index = {
     IcebergHttpError,
-    getMetadata,
     addSchema,
     addPartitionSpec,
     addManifest,
     addDataFiles,
-    setCurrentCommit,
+    getMetadata,
+    importRedshiftManifest,
     removeSnapshots,
+    setCurrentCommit,
 };
 
 exports.IcebergHttpError = IcebergHttpError;
@@ -2168,7 +2291,10 @@ exports.addPartitionSpec = addPartitionSpec;
 exports.addSchema = addSchema;
 exports.default = index;
 exports.getMetadata = getMetadata;
+exports.importRedshiftManifest = importRedshiftManifest;
 exports.manifestCompact = manifestCompact;
+exports.maxBuffer = maxBuffer;
+exports.minBuffer = minBuffer;
 exports.removeSnapshots = removeSnapshots;
 exports.setCurrentCommit = setCurrentCommit;
 exports.submitSnapshot = submitSnapshot;

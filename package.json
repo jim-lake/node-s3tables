@@ -1,6 +1,6 @@
 {
   "name": "node-s3tables",
-  "version": "0.0.18",
+  "version": "0.0.19",
   "description": "node api for dealing with s3tables",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
