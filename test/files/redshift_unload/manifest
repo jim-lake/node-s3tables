@@ -1,0 +1,39 @@
+{
+  "entries": [
+    {"url":"s3://build-test-west-bucket/unload/test1/app=test-app2/ingest_date=2024-09-25/0000_part_00.parquet", "meta": { "content_length": 6414, "record_count": 69 }},
+    {"url":"s3://build-test-west-bucket/unload/test1/app=test-app2/ingest_date=2024-09-26/0000_part_00.parquet", "meta": { "content_length": 5514, "record_count": 11 }},
+    {"url":"s3://build-test-west-bucket/unload/test1/app=test-app2/ingest_date=2024-12-20/0000_part_00.parquet", "meta": { "content_length": 5818, "record_count": 13 }},
+    {"url":"s3://build-test-west-bucket/unload/test1/app=test-app2/ingest_date=2024-09-25/0001_part_00.parquet", "meta": { "content_length": 6372, "record_count": 66 }},
+    {"url":"s3://build-test-west-bucket/unload/test1/app=test-app2/ingest_date=2024-09-26/0001_part_00.parquet", "meta": { "content_length": 5528, "record_count": 10 }},
+    {"url":"s3://build-test-west-bucket/unload/test1/app=test-app2/ingest_date=2024-12-20/0001_part_00.parquet", "meta": { "content_length": 5698, "record_count": 13 }}
+  ],
+  "schema": {
+    "elements": [
+      {"name": "app", "type": { "base": "character varying", "max_length": 16 }},
+      {"name": "app_ver", "type": { "base": "character varying", "max_length": 16 }},
+      {"name": "ingest_datetime", "type": { "base": "timestamp without time zone" }},
+      {"name": "event_datetime", "type": { "base": "timestamp without time zone" }},
+      {"name": "hostname", "type": { "base": "character varying", "max_length": 64 }},
+      {"name": "filename", "type": { "base": "character varying", "max_length": 256 }},
+      {"name": "log_level", "type": { "base": "character varying", "max_length": 16 }},
+      {"name": "device_tag", "type": { "base": "character varying", "max_length": 64 }},
+      {"name": "user_tag", "type": { "base": "character varying", "max_length": 64 }},
+      {"name": "remote_address", "type": { "base": "character varying", "max_length": 64 }},
+      {"name": "response_bytes", "type": { "base": "integer" }},
+      {"name": "response_ms", "type": { "base": "double precision" }},
+      {"name": "device_type", "type": { "base": "character varying", "max_length": 32 }},
+      {"name": "os", "type": { "base": "character varying", "max_length": 16 }},
+      {"name": "os_ver", "type": { "base": "character varying", "max_length": 16 }},
+      {"name": "browser", "type": { "base": "character varying", "max_length": 16 }},
+      {"name": "browser_ver", "type": { "base": "character varying", "max_length": 16 }},
+      {"name": "country", "type": { "base": "character varying", "max_length": 16 }},
+      {"name": "language", "type": { "base": "character varying", "max_length": 16 }},
+      {"name": "log_line", "type": { "base": "character varying", "max_length": 65535 }},
+      {"name": "ingest_date", "type": { "base": "date" }}
+    ]
+  },
+  "author": {
+    "name": "Amazon Redshift",
+    "version": "1.0.0"
+  }
+}
