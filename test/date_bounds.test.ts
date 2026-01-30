@@ -130,8 +130,8 @@ void test('date partition bounds test', async (t) => {
         });
 
         decoder.on('end', () => {
- resolve(results);
-});
+          resolve(results);
+        });
         decoder.on('error', reject);
 
         decoder.write(Buffer.from(body));
