@@ -36,16 +36,11 @@ export async function importRedshiftManifest(
     throw new Error('bad tableBucketARN');
   }
   const manifest = await _downloadRedshift(params);
-
-  // Sort entries by content_length descending (biggest files first)
   manifest.entries.sort((a, b) => {
     const sizeA = Number(a.meta?.content_length ?? 0);
     const sizeB = Number(b.meta?.content_length ?? 0);
     return sizeB - sizeA;
   });
-  console.log(
-    `Sorted ${manifest.entries.length} files by size (biggest first)`
-  );
 
   const metadata = await getMetadata(params);
   const bucket = metadata.location.split('/').slice(-1)[0];
@@ -55,16 +50,12 @@ export async function importRedshiftManifest(
 
   const import_prefix = `data/${randomUUID()}/`;
   const lists: AddFileList[] = [];
-  let fileCount = 0;
-  const totalFiles = manifest.entries.length;
   const BATCH_SIZE = 10;
   let lastResult: AddDataFilesResult | null = null;
 
   for (const entry of manifest.entries) {
-    fileCount++;
     const { url } = entry;
     const file = url.split('/').pop() ?? '';
-    const fileSize = entry.meta?.content_length ?? 0;
     const parts = [...url.matchAll(/\/([^=/]*=[^/=]*)/g)].map(
       (m) => m[1] ?? ''
     );
@@ -90,9 +81,6 @@ export async function importRedshiftManifest(
     }
     const part_path = parts.length > 0 ? `${parts.join('/')}/` : '';
     const key = import_prefix + part_path + file;
-    console.log(
-      `Processing file ${fileCount}/${totalFiles}: ${file} (${fileSize} bytes)`
-    );
     const { s3Url, stats } = await _maybeMoveFile({
       credentials,
       region,
@@ -105,8 +93,7 @@ export async function importRedshiftManifest(
     });
     list.files.push({ file: s3Url, partitions, ...stats });
 
-    if (fileCount % BATCH_SIZE === 0) {
-      console.log(`Committing batch of ${BATCH_SIZE} files...`);
+    if (lists.reduce((sum, l) => sum + l.files.length, 0) >= BATCH_SIZE) {
       lastResult = await addDataFiles({
         credentials,
         tableBucketARN: params.tableBucketARN,
@@ -116,16 +103,10 @@ export async function importRedshiftManifest(
         retryCount: params.retryCount,
       });
       lists.length = 0;
-      if (global.gc) {
-        global.gc();
-      }
     }
   }
 
   if (lists.length > 0 && lists.some((l) => l.files.length > 0)) {
-    console.log(
-      `Committing final batch of ${lists.reduce((sum, l) => sum + l.files.length, 0)} files...`
-    );
     lastResult = await addDataFiles({
       credentials,
       tableBucketARN: params.tableBucketARN,

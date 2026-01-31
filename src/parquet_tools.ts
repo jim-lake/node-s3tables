@@ -123,10 +123,6 @@ export async function rewriteParquet(
   const { inputBuffer, inputS3, s3Client, bucket, key, schema, partitions } =
     params;
 
-  console.log(
-    `[rewrite] Starting rewrite, inputS3: ${!!inputS3}, inputBuffer: ${inputBuffer?.length || 0} bytes`
-  );
-
   const reader = inputS3
     ? await ParquetReader.openS3(s3Client, inputS3, {
         treatInt96AsTimestamp: true,
@@ -135,26 +131,16 @@ export async function rewriteParquet(
         treatInt96AsTimestamp: true,
       });
 
-  const rowGroupCount = reader.metadata!.row_groups.length;
-  const totalRows = reader.metadata!.num_rows;
-  console.log(
-    `[rewrite] File has ${rowGroupCount} row groups, ${totalRows} total rows`
-  );
-
   const cursor = reader.getCursor();
-
-  const pqSchemaFields = icebergToParquetSchema(schema);
-  const pqSchema = new ParquetSchema(pqSchemaFields);
+  const pqSchema = new ParquetSchema(icebergToParquetSchema(schema));
 
   let fileSize = 0n;
   const stream = new PassThrough();
-
   stream.on('data', (chunk: Buffer) => {
     fileSize += BigInt(chunk.length);
   });
 
   const writer = await ParquetWriter.openStream(pqSchema, stream);
-
   const upload = new Upload({
     client: s3Client,
     params: { Bucket: bucket, Key: key, Body: stream },
@@ -163,9 +149,6 @@ export async function rewriteParquet(
   const uploadPromise = upload.done();
 
   let row: Record<string, unknown> | null;
-  let rowCount = 0;
-  const startMem = process.memoryUsage();
-
   while ((row = await cursor.next())) {
     const converted: Record<string, unknown> = {};
     for (const field of schema.fields) {
@@ -173,33 +156,13 @@ export async function rewriteParquet(
       converted[field.name] = convertValue(val, field.type);
     }
     await writer.appendRow(converted);
-    rowCount++;
-
-    if (rowCount % 50000 === 0) {
-      const mem = process.memoryUsage();
-      const heapMB = (mem.heapUsed / 1024 / 1024).toFixed(0);
-      const rssMB = (mem.rss / 1024 / 1024).toFixed(0);
-      console.log(
-        `[rewrite] Processed ${rowCount}/${totalRows} rows, heap: ${heapMB}MB, rss: ${rssMB}MB`
-      );
-
-      if (global.gc) global.gc();
-    }
   }
 
-  const endMem = process.memoryUsage();
-  console.log(
-    `[rewrite] Finished ${rowCount} rows, heap delta: ${((endMem.heapUsed - startMem.heapUsed) / 1024 / 1024).toFixed(0)}MB`
-  );
-
-  const envelopeWriter = writer.envelopeWriter;
   await reader.close();
   await writer.close();
   await uploadPromise;
 
-  const stats = extractWriterStats(envelopeWriter, schema);
-
-  return { fileSize, stats };
+  return { fileSize, stats: extractWriterStats(writer.envelopeWriter, schema) };
 }
 
 interface ParquetWriterColumnMetadata {
