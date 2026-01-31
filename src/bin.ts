@@ -7,6 +7,11 @@ import {
 } from 'node-s3tables';
 import type { AddFile, AddDataFilesParams } from 'node-s3tables';
 
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  process.exit(1);
+});
+
 const { positionals, values } = parseArgs({
   allowPositionals: true,
   options: {
