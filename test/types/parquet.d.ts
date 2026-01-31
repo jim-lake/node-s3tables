@@ -61,6 +61,14 @@ declare module 'parquetjs' {
     row_groups: ParquetReaderRowGroup[];
   }
 
+  interface ParquetCursor {
+    next(): Promise<Record<string, unknown> | null>;
+  }
+
+  interface ParquetReaderOptions {
+    treatInt96AsTimestamp?: boolean;
+  }
+
   export class ParquetWriter {
     static openStream(
       schema: ParquetSchema,
@@ -75,9 +83,14 @@ declare module 'parquetjs' {
   }
 
   export class ParquetReader {
-    static openBuffer(buffer: Buffer): Promise<ParquetReader>;
+    static openBuffer(
+      buffer: Buffer,
+      options?: ParquetReaderOptions
+    ): Promise<ParquetReader>;
 
     close(): Promise<void>;
+
+    getCursor(): ParquetCursor;
 
     metadata: ParquetMetadata;
   }

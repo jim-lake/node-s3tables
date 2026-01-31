@@ -6,6 +6,7 @@ import { addDataFiles } from './add_data_files';
 import { encodeValue } from './avro_transform';
 import { parse } from './json';
 import { getMetadata } from './metadata';
+import { rewriteParquet } from './parquet_tools';
 import { parseS3Url, getS3Client } from './s3_tools';
 
 import type { AwsCredentialIdentity } from '@aws-sdk/types';
@@ -24,6 +25,7 @@ export interface ImportRedshiftManifestParams {
   schemaId?: number;
   specId?: number;
   retryCount?: number | undefined;
+  rewriteParquet?: boolean;
 }
 export async function importRedshiftManifest(
   params: ImportRedshiftManifestParams
@@ -77,6 +79,7 @@ export async function importRedshiftManifest(
       key,
       url,
       schema,
+      rewriteParquet: params.rewriteParquet,
     });
     list.files.push({ file: s3Url, partitions, ...stats });
   }
@@ -114,6 +117,7 @@ interface MaybeMoveFileParams {
   key: string;
   url: string;
   schema: IcebergSchema;
+  rewriteParquet?: boolean | undefined;
 }
 interface MaybeMoveFileResult {
   s3Url: string;
@@ -133,18 +137,31 @@ async function _maybeMoveFile(
     throw new Error(`body missing for file: ${params.url}`);
   }
   const fileBuffer = Buffer.from(await Body.transformToByteArray());
-  const stats = await _extractStats(fileBuffer, params.schema);
 
   let s3Url: string;
-  if (bucket === params.bucket) {
-    s3Url = params.url;
-  } else {
+  let stats: Omit<AddFile, 'file' | 'partitions'>;
+
+  if (params.rewriteParquet) {
+    const result = await rewriteParquet(fileBuffer, params.schema);
     const upload = new Upload({
       client: s3_client,
-      params: { Bucket: params.bucket, Key: params.key, Body: fileBuffer },
+      params: { Bucket: params.bucket, Key: params.key, Body: result.buffer },
     });
     await upload.done();
     s3Url = `s3://${params.bucket}/${params.key}`;
+    stats = { ...result.stats, fileSize: BigInt(result.buffer.length) };
+  } else {
+    stats = await _extractStats(fileBuffer, params.schema);
+    if (bucket === params.bucket) {
+      s3Url = params.url;
+    } else {
+      const upload = new Upload({
+        client: s3_client,
+        params: { Bucket: params.bucket, Key: params.key, Body: fileBuffer },
+      });
+      await upload.done();
+      s3Url = `s3://${params.bucket}/${params.key}`;
+    }
   }
   return { s3Url, stats };
 }
