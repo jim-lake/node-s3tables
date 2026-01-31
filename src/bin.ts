@@ -16,6 +16,7 @@ const { positionals, values } = parseArgs({
     files: { type: 'string' },
     'max-snapshots': { type: 'string' },
     'redshift-manifest-url': { type: 'string' },
+    'rewrite-parquet': { type: 'boolean' },
   },
 });
 
@@ -27,7 +28,7 @@ if (!command || !tableBucketARN || !namespace || !name) {
   );
   console.error('Commands:');
   console.error('  compact      Compact manifest files');
-  console.error('    Options: --force-rewrite');
+  console.error('    Options: [--force-rewrite]');
   console.error('');
   console.error('  add_files    Add data files to table');
   console.error(
@@ -41,7 +42,7 @@ if (!command || !tableBucketARN || !namespace || !name) {
     '  import_redshift    Import redshift manifest created by UNLOAD'
   );
   console.error(
-    '    Options: --redshift-manifest-url s3://s3table-bucket/unload/manfiest'
+    '    Options: --redshift-manifest-url <s3url> [--rewrite-parquet]'
   );
   console.error('');
   process.exit(-1);
@@ -128,11 +129,23 @@ if (command === 'compact') {
     );
     process.exit(-1);
   }
+  const rewriteParquet = Boolean(values['rewrite-parquet']);
+  console.log(
+    'Importing file:',
+    redshiftManifestUrl,
+    'to:',
+    tableBucketARN,
+    namespace,
+    name,
+    'rewrite parquet:',
+    rewriteParquet
+  );
   importRedshiftManifest({
     tableBucketARN,
     namespace,
     name,
     redshiftManifestUrl,
+    rewriteParquet,
   })
     .then((result: unknown) => {
       console.log('Import result:', result);
