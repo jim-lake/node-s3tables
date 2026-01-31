@@ -1,14 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
+import { ParquetReader } from 'parquetjs';
 import { addDataFiles } from './add_data_files';
+import { encodeValue } from './avro_transform';
 import { parse } from './json';
 import { getMetadata } from './metadata';
 import { parseS3Url, getS3Client } from './s3_tools';
 
 import type { AwsCredentialIdentity } from '@aws-sdk/types';
 import type { AddDataFilesResult, AddFileList } from './add_data_files';
-import type { IcebergMetadata } from './iceberg';
+import type { AddFile } from './manifest';
+import type { IcebergMetadata, IcebergSchema } from './iceberg';
 
 export default { importRedshiftManifest };
 
@@ -41,7 +44,6 @@ export async function importRedshiftManifest(
   const lists: AddFileList[] = [];
   for (const entry of manifest.entries) {
     const { url } = entry;
-    const { content_length, record_count } = entry.meta;
     const file = url.split('/').pop() ?? '';
     const parts = [...url.matchAll(/\/([^=/]*=[^/=]*)/g)].map(
       (m) => m[1] ?? ''
@@ -54,6 +56,10 @@ export async function importRedshiftManifest(
     const keys = Object.keys(partitions);
     const specId = params.specId ?? _findSpec(metadata, keys);
     const schemaId = params.schemaId ?? _findSchema(metadata, manifest);
+    const schema = metadata.schemas.find((s) => s['schema-id'] === schemaId);
+    if (!schema) {
+      throw new Error(`schema ${schemaId} not found`);
+    }
 
     let list = lists.find(
       (l) => l.schemaId === schemaId && l.specId === specId
@@ -64,12 +70,15 @@ export async function importRedshiftManifest(
     }
     const part_path = parts.length > 0 ? `${parts.join('/')}/` : '';
     const key = import_prefix + part_path + file;
-    list.files.push({
-      file: await _maybeMoveFile({ credentials, region, bucket, key, url }),
-      partitions,
-      fileSize: BigInt(content_length),
-      recordCount: BigInt(record_count),
+    const { s3Url, stats } = await _maybeMoveFile({
+      credentials,
+      region,
+      bucket,
+      key,
+      url,
+      schema,
     });
+    list.files.push({ file: s3Url, partitions, ...stats });
   }
   return addDataFiles({
     credentials,
@@ -104,14 +113,18 @@ interface MaybeMoveFileParams {
   bucket: string;
   key: string;
   url: string;
+  schema: IcebergSchema;
 }
-async function _maybeMoveFile(params: MaybeMoveFileParams): Promise<string> {
+interface MaybeMoveFileResult {
+  s3Url: string;
+  stats: Omit<AddFile, 'file' | 'partitions'>;
+}
+async function _maybeMoveFile(
+  params: MaybeMoveFileParams
+): Promise<MaybeMoveFileResult> {
   const { bucket, key } = parseS3Url(params.url);
   if (!bucket || !key) {
     throw new Error(`bad entry url: ${params.url}`);
-  }
-  if (bucket === params.bucket) {
-    return params.url;
   }
   const s3_client = getS3Client(params);
   const get = new GetObjectCommand({ Bucket: bucket, Key: key });
@@ -119,12 +132,105 @@ async function _maybeMoveFile(params: MaybeMoveFileParams): Promise<string> {
   if (!Body) {
     throw new Error(`body missing for file: ${params.url}`);
   }
-  const upload = new Upload({
-    client: s3_client,
-    params: { Bucket: params.bucket, Key: params.key, Body },
-  });
-  await upload.done();
-  return `s3://${params.bucket}/${params.key}`;
+  const fileBuffer = Buffer.from(await Body.transformToByteArray());
+  const stats = await _extractStats(fileBuffer, params.schema);
+
+  let s3Url: string;
+  if (bucket === params.bucket) {
+    s3Url = params.url;
+  } else {
+    const upload = new Upload({
+      client: s3_client,
+      params: { Bucket: params.bucket, Key: params.key, Body: fileBuffer },
+    });
+    await upload.done();
+    s3Url = `s3://${params.bucket}/${params.key}`;
+  }
+  return { s3Url, stats };
+}
+async function _extractStats(
+  fileBuffer: Buffer,
+  schema: IcebergSchema
+): Promise<Omit<AddFile, 'file' | 'partitions'>> {
+  const reader = await ParquetReader.openBuffer(fileBuffer);
+  const rowGroups = reader.metadata.row_groups;
+
+  const columnSizes: Record<string, bigint> = {};
+  const valueCounts: Record<string, bigint> = {};
+  const nullValueCounts: Record<string, bigint> = {};
+  const lowerBounds: Record<string, Buffer> = {};
+  const upperBounds: Record<string, Buffer> = {};
+  let recordCount = 0n;
+
+  for (const rg of rowGroups) {
+    for (const column of rg.columns) {
+      const fieldName = column.meta_data?.path_in_schema?.[0];
+      if (fieldName && column.meta_data) {
+        const compressedSize = column.meta_data.total_compressed_size;
+        if (compressedSize?.buffer) {
+          columnSizes[fieldName] =
+            (columnSizes[fieldName] ?? 0n) +
+            compressedSize.buffer.readBigInt64BE(compressedSize.offset);
+        }
+        const numValues = column.meta_data.num_values;
+        if (numValues?.buffer) {
+          const count = numValues.buffer.readBigInt64BE(numValues.offset);
+          valueCounts[fieldName] = (valueCounts[fieldName] ?? 0n) + count;
+          if (recordCount < count) {
+            recordCount = count;
+          }
+        }
+        const stats = column.meta_data.statistics;
+        if (stats) {
+          const nullCount = stats.null_count;
+          if (nullCount?.buffer) {
+            nullValueCounts[fieldName] =
+              (nullValueCounts[fieldName] ?? 0n) +
+              nullCount.buffer.readBigInt64BE(nullCount.offset);
+          }
+          const field = schema.fields.find((f) => f.name === fieldName);
+          const fieldType =
+            field && typeof field.type === 'string' ? field.type : null;
+          const minBuf = encodeValue(
+            stats.min_value ?? null,
+            'identity',
+            fieldType
+          );
+          const maxBuf = encodeValue(
+            stats.max_value ?? null,
+            'identity',
+            fieldType
+          );
+          if (
+            minBuf &&
+            (!lowerBounds[fieldName] ||
+              Buffer.compare(minBuf, lowerBounds[fieldName]) < 0)
+          ) {
+            lowerBounds[fieldName] = minBuf;
+          }
+          if (
+            maxBuf &&
+            (!upperBounds[fieldName] ||
+              Buffer.compare(maxBuf, upperBounds[fieldName]) > 0)
+          ) {
+            upperBounds[fieldName] = maxBuf;
+          }
+        }
+      }
+    }
+  }
+  await reader.close();
+
+  return {
+    fileSize: BigInt(fileBuffer.length),
+    recordCount,
+    columnSizes: Object.keys(columnSizes).length > 0 ? columnSizes : null,
+    valueCounts: Object.keys(valueCounts).length > 0 ? valueCounts : null,
+    nullValueCounts:
+      Object.keys(nullValueCounts).length > 0 ? nullValueCounts : null,
+    lowerBounds: Object.keys(lowerBounds).length > 0 ? lowerBounds : null,
+    upperBounds: Object.keys(upperBounds).length > 0 ? upperBounds : null,
+  };
 }
 function _findSpec(metadata: IcebergMetadata, keys: string[]): number {
   if (keys.length === 0) {

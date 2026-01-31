@@ -102,8 +102,18 @@ void test('redshift import manifest test', async (t) => {
       name,
       specId: 1,
       fields: [
-        { 'field-id': 1000, name: 'app', 'source-id': appField.id, transform: 'identity' },
-        { 'field-id': 1001, name: 'ingest_date', 'source-id': ingestDatetimeField.id, transform: 'day' },
+        {
+          'field-id': 1000,
+          name: 'app',
+          'source-id': appField.id,
+          transform: 'identity',
+        },
+        {
+          'field-id': 1001,
+          name: 'ingest_date',
+          'source-id': ingestDatetimeField.id,
+          transform: 'day',
+        },
       ],
     });
     specId = result.metadata['default-spec-id'];
@@ -129,7 +139,9 @@ void test('redshift import manifest test', async (t) => {
     for (const partDir of partitionDirs) {
       const partPath = join(testFilesDir, 'app=test-app2', partDir);
       if (statSync(partPath).isDirectory()) {
-        const files = readdirSync(partPath).filter((f) => f.endsWith('.parquet'));
+        const files = readdirSync(partPath).filter((f) =>
+          f.endsWith('.parquet')
+        );
         for (const file of files) {
           const localPath = join(partPath, file);
           const s3Key = `${s3Prefix}/app=test-app2/${partDir}/${file}`;
@@ -186,7 +198,11 @@ void test('redshift import manifest test', async (t) => {
 
     const rows = await queryRows(namespace, name);
     log('Total row count:', rows.length);
-    assert.strictEqual(rows.length, expectedTotal, `Expected ${expectedTotal} rows`);
+    assert.strictEqual(
+      rows.length,
+      expectedTotal,
+      `Expected ${expectedTotal} rows`
+    );
 
     // Validate partition filtering using source column
     const sept25Rows = await queryRows(
@@ -195,7 +211,11 @@ void test('redshift import manifest test', async (t) => {
       "date(ingest_datetime) = date('2024-09-25')"
     );
     log('Sept 25 rows:', sept25Rows.length);
-    assert.strictEqual(sept25Rows.length, 135, 'Expected 135 rows for 2024-09-25');
+    assert.strictEqual(
+      sept25Rows.length,
+      135,
+      'Expected 135 rows for 2024-09-25'
+    );
 
     const dec20Rows = await queryRows(
       namespace,

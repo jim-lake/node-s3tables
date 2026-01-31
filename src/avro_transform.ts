@@ -34,7 +34,7 @@ function _outputType(
   }
   return null;
 }
-function _encodeValue(
+export function encodeValue(
   raw: RawValue,
   transform: IcebergTransform | null,
   out_type: IcebergPrimitiveType | null
@@ -91,11 +91,39 @@ function _encodeValue(
           buf.writeUInt8(raw ? 1 : 0);
           return buf;
         }
-        case 'binary':
-        case 'date':
-        case 'time':
+        case 'date': {
+          // Iceberg date is days since 1970-01-01 as int32
+          let days: number;
+          if (typeof raw === 'string') {
+            days = Math.floor(new Date(raw).getTime() / (24 * 3600 * 1000));
+          } else if (typeof raw === 'number') {
+            days = raw;
+          } else {
+            throw new Error('date requires string or number');
+          }
+          const buf = Buffer.alloc(4);
+          buf.writeInt32LE(days);
+          return buf;
+        }
         case 'timestamp':
-        case 'timestamptz':
+        case 'timestamptz': {
+          // Iceberg timestamp is microseconds since epoch as int64
+          let micros: bigint;
+          if (typeof raw === 'string') {
+            micros = BigInt(new Date(raw).getTime()) * 1000n;
+          } else if (typeof raw === 'number') {
+            micros = BigInt(raw);
+          } else if (typeof raw === 'bigint') {
+            micros = raw;
+          } else {
+            throw new Error('timestamp requires string, number, or bigint');
+          }
+          const buf = Buffer.alloc(8);
+          buf.writeBigInt64LE(micros);
+          return buf;
+        }
+        case 'time':
+        case 'binary':
           throw new Error(`Identity not implemented for type ${out_type}`);
         default:
           throw new Error(`Identity not implemented for type ${out_type}`);
@@ -169,7 +197,7 @@ export function makeBounds(
       return null;
     }
     const out_type = _outputType(f.transform, schemaField.type);
-    return _encodeValue(raw, f.transform, out_type);
+    return encodeValue(raw, f.transform, out_type);
   });
 }
 export function compareBounds(

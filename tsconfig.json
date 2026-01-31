@@ -5,7 +5,7 @@
     "allowJs": false,
     "checkJs": false,
     "module": "esnext",
-    "skipLibCheck": false,
+    "skipLibCheck": true,
     "skipDefaultLibCheck": false,
     "declaration": false,
     "declarationMap": false,
