@@ -1,18 +1,23 @@
 import { randomUUID } from 'node:crypto';
+import { createZstdDecompress } from 'node:zlib';
+import { Readable, Transform, Writable, PassThrough } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
-import { ParquetReader } from 'parquetjs';
+import { ParquetWriter, ParquetSchema } from 'parquetjs';
 import { addDataFiles } from './add_data_files';
-import { encodeValue } from './avro_transform';
 import { parse } from './json';
 import { getMetadata } from './metadata';
-import { rewriteParquet } from './parquet_tools';
 import { parseS3Url, getS3Client } from './s3_tools';
 
 import type { AwsCredentialIdentity } from '@aws-sdk/types';
 import type { AddDataFilesResult, AddFileList } from './add_data_files';
 import type { AddFile } from './manifest';
-import type { IcebergMetadata, IcebergSchema } from './iceberg';
+import type {
+  IcebergMetadata,
+  IcebergSchema,
+  IcebergSchemaField,
+} from './iceberg';
 
 export default { importRedshiftManifest };
 
@@ -25,8 +30,8 @@ export interface ImportRedshiftManifestParams {
   schemaId?: number;
   specId?: number;
   retryCount?: number | undefined;
-  rewriteParquet?: boolean;
 }
+
 export async function importRedshiftManifest(
   params: ImportRedshiftManifestParams
 ): Promise<AddDataFilesResult> {
@@ -55,7 +60,7 @@ export async function importRedshiftManifest(
 
   for (const entry of manifest.entries) {
     const { url } = entry;
-    const file = url.split('/').pop() ?? '';
+    const file = url.split('/').pop()?.replace('.json.zst', '.parquet') ?? '';
     const parts = [...url.matchAll(/\/([^=/]*=[^/=]*)/g)].map(
       (m) => m[1] ?? ''
     );
@@ -81,14 +86,13 @@ export async function importRedshiftManifest(
     }
     const part_path = parts.length > 0 ? `${parts.join('/')}/` : '';
     const key = import_prefix + part_path + file;
-    const { s3Url, stats } = await _maybeMoveFile({
+    const { s3Url, stats } = await _convertJsonToParquet({
       credentials,
       region,
       bucket,
       key,
       url,
       schema,
-      rewriteParquet: params.rewriteParquet,
       partitions,
     });
     list.files.push({ file: s3Url, partitions, ...stats });
@@ -131,6 +135,7 @@ interface RedshiftManifest {
   }[];
   schema: { elements: { name: string }[] };
 }
+
 async function _downloadRedshift(params: ImportRedshiftManifestParams) {
   const s3_client = getS3Client(params);
   const { bucket, key } = parseS3Url(params.redshiftManifestUrl);
@@ -142,140 +147,184 @@ async function _downloadRedshift(params: ImportRedshiftManifestParams) {
   }
   return parse(body) as unknown as RedshiftManifest;
 }
-interface MaybeMoveFileParams {
+
+interface ConvertJsonToParquetParams {
   credentials?: AwsCredentialIdentity | undefined;
   region: string;
   bucket: string;
   key: string;
   url: string;
   schema: IcebergSchema;
-  rewriteParquet?: boolean | undefined;
   partitions?: Record<string, string>;
 }
-interface MaybeMoveFileResult {
+
+interface ConvertJsonToParquetResult {
   s3Url: string;
   stats: Omit<AddFile, 'file' | 'partitions'>;
 }
-async function _maybeMoveFile(
-  params: MaybeMoveFileParams
-): Promise<MaybeMoveFileResult> {
+
+async function _convertJsonToParquet(
+  params: ConvertJsonToParquetParams
+): Promise<ConvertJsonToParquetResult> {
   const { bucket: sourceBucket, key: sourceKey } = parseS3Url(params.url);
   if (!sourceBucket || !sourceKey) {
     throw new Error(`bad entry url: ${params.url}`);
   }
   const s3_client = getS3Client(params);
 
-  let s3Url: string;
-  let stats: Omit<AddFile, 'file' | 'partitions'>;
-
-  if (params.rewriteParquet) {
-    const result = await rewriteParquet({
-      inputS3: { Bucket: sourceBucket, Key: sourceKey },
-      schema: params.schema,
-      partitions: params.partitions,
-      s3Client: s3_client,
-      bucket: params.bucket,
-      key: params.key,
-    });
-    s3Url = `s3://${params.bucket}/${params.key}`;
-    stats = { ...result.stats, fileSize: result.fileSize };
-  } else {
-    const get = new GetObjectCommand({ Bucket: sourceBucket, Key: sourceKey });
-    const { Body } = await s3_client.send(get);
-    if (!Body) {
-      throw new Error(`body missing for file: ${params.url}`);
-    }
-    const fileBuffer = Buffer.from(await Body.transformToByteArray());
-    stats = await _extractStats(fileBuffer, params.schema);
-    if (sourceBucket === params.bucket) {
-      s3Url = params.url;
-    } else {
-      const upload = new Upload({
-        client: s3_client,
-        params: { Bucket: params.bucket, Key: params.key, Body: fileBuffer },
-      });
-      await upload.done();
-      s3Url = `s3://${params.bucket}/${params.key}`;
-    }
+  const get = new GetObjectCommand({ Bucket: sourceBucket, Key: sourceKey });
+  const { Body } = await s3_client.send(get);
+  if (!Body) {
+    throw new Error(`body missing for file: ${params.url}`);
   }
-  return { s3Url, stats };
+
+  const parquetSchema = _buildParquetSchema(params.schema);
+  const chunks: Buffer[] = [];
+  const parquetStream = new PassThrough();
+  parquetStream.on('data', (chunk) => chunks.push(chunk));
+
+  const writer = await ParquetWriter.openStream(parquetSchema, parquetStream);
+
+  let recordCount = 0n;
+
+  await pipeline(
+    Readable.from(Body as any),
+    createZstdDecompress(),
+    _createJsonLineTransform(params.schema),
+    new Writable({
+      objectMode: true,
+      async write(row, _encoding, callback) {
+        try {
+          await writer.appendRow(row);
+          recordCount++;
+          callback();
+        } catch (err) {
+          callback(err as Error);
+        }
+      },
+    })
+  );
+
+  await writer.close();
+  const fileBuffer = Buffer.concat(chunks);
+
+  const stats = _extractStatsFromWriter(writer, params.schema);
+
+  const upload = new Upload({
+    client: s3_client,
+    params: { Bucket: params.bucket, Key: params.key, Body: fileBuffer },
+  });
+  await upload.done();
+
+  return {
+    s3Url: `s3://${params.bucket}/${params.key}`,
+    stats: { ...stats, fileSize: BigInt(fileBuffer.length), recordCount },
+  };
 }
-async function _extractStats(
-  fileBuffer: Buffer,
+
+function _buildParquetSchema(schema: IcebergSchema) {
+  const fields: Record<string, { type: string; optional?: boolean }> = {};
+  for (const field of schema.fields) {
+    const type = typeof field.type === 'string' ? field.type : 'string';
+    let parquetType: string;
+    switch (type) {
+      case 'int':
+        parquetType = 'INT32';
+        break;
+      case 'long':
+        parquetType = 'INT64';
+        break;
+      case 'float':
+        parquetType = 'FLOAT';
+        break;
+      case 'double':
+        parquetType = 'DOUBLE';
+        break;
+      case 'boolean':
+        parquetType = 'BOOLEAN';
+        break;
+      case 'timestamp':
+      case 'timestamptz':
+        parquetType = 'TIMESTAMP_MICROS';
+        break;
+      case 'date':
+        parquetType = 'DATE';
+        break;
+      default:
+        parquetType = 'UTF8';
+    }
+    fields[field.name] = { type: parquetType, optional: !field.required };
+  }
+  return new ParquetSchema(fields);
+}
+
+function _extractStatsFromWriter(
+  writer: any,
   schema: IcebergSchema
-): Promise<Omit<AddFile, 'file' | 'partitions'>> {
-  const reader = await ParquetReader.openBuffer(fileBuffer);
-  const rowGroups = reader.metadata.row_groups;
+): Omit<AddFile, 'file' | 'partitions' | 'fileSize' | 'recordCount'> {
+  const rowGroups = writer.envelopeWriter?.rowGroups || [];
 
   const columnSizes: Record<string, bigint> = {};
   const valueCounts: Record<string, bigint> = {};
   const nullValueCounts: Record<string, bigint> = {};
   const lowerBounds: Record<string, Buffer> = {};
   const upperBounds: Record<string, Buffer> = {};
-  let recordCount = 0n;
 
   for (const rg of rowGroups) {
     for (const column of rg.columns) {
       const fieldName = column.meta_data?.path_in_schema?.[0];
       if (fieldName && column.meta_data) {
         const compressedSize = column.meta_data.total_compressed_size;
-        if (compressedSize?.buffer) {
+        if (compressedSize != null) {
           columnSizes[fieldName] =
-            (columnSizes[fieldName] ?? 0n) +
-            compressedSize.buffer.readBigInt64BE(compressedSize.offset);
+            (columnSizes[fieldName] ?? 0n) + BigInt(compressedSize);
         }
+
         const numValues = column.meta_data.num_values;
-        if (numValues?.buffer) {
-          const count = numValues.buffer.readBigInt64BE(numValues.offset);
-          valueCounts[fieldName] = (valueCounts[fieldName] ?? 0n) + count;
-          if (recordCount < count) {
-            recordCount = count;
-          }
+        if (numValues != null) {
+          valueCounts[fieldName] =
+            (valueCounts[fieldName] ?? 0n) + BigInt(numValues);
         }
+
         const stats = column.meta_data.statistics;
         if (stats) {
           const nullCount = stats.null_count;
-          if (nullCount?.buffer) {
+          if (nullCount != null) {
             nullValueCounts[fieldName] =
-              (nullValueCounts[fieldName] ?? 0n) +
-              nullCount.buffer.readBigInt64BE(nullCount.offset);
+              (nullValueCounts[fieldName] ?? 0n) + BigInt(nullCount);
           }
+
           const field = schema.fields.find((f) => f.name === fieldName);
           const fieldType =
             field && typeof field.type === 'string' ? field.type : null;
-          const minBuf = encodeValue(
-            stats.min_value ?? null,
-            'identity',
-            fieldType
-          );
-          const maxBuf = encodeValue(
-            stats.max_value ?? null,
-            'identity',
-            fieldType
-          );
-          if (
-            minBuf &&
-            (!lowerBounds[fieldName] ||
-              Buffer.compare(minBuf, lowerBounds[fieldName]) < 0)
-          ) {
-            lowerBounds[fieldName] = minBuf;
+
+          if (stats.min_value) {
+            const minBuf = _encodeStatValue(stats.min_value, fieldType);
+            if (
+              minBuf &&
+              (!lowerBounds[fieldName] ||
+                Buffer.compare(minBuf, lowerBounds[fieldName]) < 0)
+            ) {
+              lowerBounds[fieldName] = minBuf;
+            }
           }
-          if (
-            maxBuf &&
-            (!upperBounds[fieldName] ||
-              Buffer.compare(maxBuf, upperBounds[fieldName]) > 0)
-          ) {
-            upperBounds[fieldName] = maxBuf;
+
+          if (stats.max_value) {
+            const maxBuf = _encodeStatValue(stats.max_value, fieldType);
+            if (
+              maxBuf &&
+              (!upperBounds[fieldName] ||
+                Buffer.compare(maxBuf, upperBounds[fieldName]) > 0)
+            ) {
+              upperBounds[fieldName] = maxBuf;
+            }
           }
         }
       }
     }
   }
-  await reader.close();
 
   return {
-    fileSize: BigInt(fileBuffer.length),
-    recordCount,
     columnSizes: Object.keys(columnSizes).length > 0 ? columnSizes : null,
     valueCounts: Object.keys(valueCounts).length > 0 ? valueCounts : null,
     nullValueCounts:
@@ -284,6 +333,96 @@ async function _extractStats(
     upperBounds: Object.keys(upperBounds).length > 0 ? upperBounds : null,
   };
 }
+
+function _encodeStatValue(
+  value: Buffer | string,
+  fieldType: string | null
+): Buffer | null {
+  if (Buffer.isBuffer(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    return Buffer.from(value, 'utf8');
+  }
+  return null;
+}
+
+function _createJsonLineTransform(schema: IcebergSchema): Transform {
+  let buffer = '';
+  return new Transform({
+    objectMode: false,
+    writableObjectMode: false,
+    readableObjectMode: true,
+    transform(chunk: Buffer, _encoding, callback) {
+      buffer += chunk.toString('utf8');
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      for (const line of lines) {
+        if (line.trim()) {
+          const json = parse(line) as Record<string, unknown>;
+          this.push(_normalizeRow(json, schema));
+        }
+      }
+      callback();
+    },
+    flush(callback) {
+      if (buffer.trim()) {
+        const json = parse(buffer) as Record<string, unknown>;
+        this.push(_normalizeRow(json, schema));
+      }
+      callback();
+    },
+  });
+}
+
+function _normalizeRow(
+  json: Record<string, unknown>,
+  schema: IcebergSchema
+): Record<string, unknown> {
+  const row: Record<string, unknown> = {};
+  for (const field of schema.fields) {
+    const value = json[field.name];
+    const type = typeof field.type === 'string' ? field.type : 'string';
+
+    if (value === null || value === undefined) {
+      if (field.required) {
+        row[field.name] = _getDefaultValue(type);
+      } else {
+        row[field.name] = null;
+      }
+    } else if (type === 'timestamp' || type === 'timestamptz') {
+      row[field.name] = new Date(value as string);
+    } else if (type === 'date') {
+      row[field.name] = new Date(value as string);
+    } else if (type === 'int' || type === 'long') {
+      row[field.name] = Number(value);
+    } else if (type === 'float' || type === 'double') {
+      row[field.name] = Number(value);
+    } else {
+      row[field.name] = value;
+    }
+  }
+  return row;
+}
+
+function _getDefaultValue(type: string): unknown {
+  switch (type) {
+    case 'int':
+    case 'long':
+    case 'float':
+    case 'double':
+      return 0;
+    case 'boolean':
+      return false;
+    case 'timestamp':
+    case 'timestamptz':
+    case 'date':
+      return new Date(0);
+    default:
+      return '';
+  }
+}
+
 function _findSpec(metadata: IcebergMetadata, keys: string[]): number {
   if (keys.length === 0) {
     return 0;
@@ -297,6 +436,7 @@ function _findSpec(metadata: IcebergMetadata, keys: string[]): number {
   }
   throw new Error(`spec not found for keys ${keys.join(', ')}`);
 }
+
 function _findSchema(
   metadata: IcebergMetadata,
   manifest: RedshiftManifest

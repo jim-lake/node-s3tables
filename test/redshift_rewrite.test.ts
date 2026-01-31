@@ -131,17 +131,24 @@ void test('redshift import with rewriteParquet test', async (t) => {
       );
     }
 
-    const partitionDirs = readdirSync(join(testFilesDir, 'app=test-app2'));
-    for (const partDir of partitionDirs) {
-      const partPath = join(testFilesDir, 'app=test-app2', partDir);
-      if (statSync(partPath).isDirectory()) {
-        const files = readdirSync(partPath).filter((f) =>
-          f.endsWith('.parquet')
-        );
-        for (const file of files) {
-          const localPath = join(partPath, file);
-          const s3Key = `${s3Prefix}/app=test-app2/${partDir}/${file}`;
-          await uploadFile(localPath, s3Key);
+    for (const appDir of ['app=test-app', 'app=test-app2']) {
+      const appPath = join(testFilesDir, appDir);
+      if (!statSync(appPath).isDirectory()) {
+        continue;
+      }
+
+      const partitionDirs = readdirSync(appPath);
+      for (const partDir of partitionDirs) {
+        const partPath = join(appPath, partDir);
+        if (statSync(partPath).isDirectory()) {
+          const files = readdirSync(partPath).filter((f) =>
+            f.endsWith('.json.zst')
+          );
+          for (const file of files) {
+            const localPath = join(partPath, file);
+            const s3Key = `${s3Prefix}/${appDir}/${partDir}/${file}`;
+            await uploadFile(localPath, s3Key);
+          }
         }
       }
     }
@@ -177,7 +184,6 @@ void test('redshift import with rewriteParquet test', async (t) => {
       redshiftManifestUrl: manifestUrl,
       schemaId,
       specId,
-      rewriteParquet: true,
     });
 
     log('Import result:', result);
