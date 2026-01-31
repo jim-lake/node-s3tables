@@ -49,10 +49,10 @@ void test('redshift import with rewriteParquet test', async (t) => {
       name,
       schemaId: 1,
       fields: [
-        { id: 1, name: 'app', type: 'string', required: false },
+        { id: 1, name: 'app', type: 'string', required: true },
         { id: 2, name: 'app_ver', type: 'string', required: false },
-        { id: 3, name: 'ingest_datetime', type: 'timestamp', required: false },
-        { id: 4, name: 'event_datetime', type: 'timestamp', required: false },
+        { id: 3, name: 'ingest_datetime', type: 'timestamp', required: true },
+        { id: 4, name: 'event_datetime', type: 'timestamp', required: true },
         { id: 5, name: 'hostname', type: 'string', required: false },
         { id: 6, name: 'filename', type: 'string', required: false },
         { id: 7, name: 'log_level', type: 'string', required: false },
@@ -68,7 +68,7 @@ void test('redshift import with rewriteParquet test', async (t) => {
         { id: 17, name: 'browser_ver', type: 'string', required: false },
         { id: 18, name: 'country', type: 'string', required: false },
         { id: 19, name: 'language', type: 'string', required: false },
-        { id: 20, name: 'log_line', type: 'string', required: false },
+        { id: 20, name: 'log_line', type: 'string', required: true },
       ],
     });
     schemaId = result.metadata['current-schema-id'];

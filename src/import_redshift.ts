@@ -80,6 +80,7 @@ export async function importRedshiftManifest(
       url,
       schema,
       rewriteParquet: params.rewriteParquet,
+      partitions,
     });
     list.files.push({ file: s3Url, partitions, ...stats });
   }
@@ -118,6 +119,7 @@ interface MaybeMoveFileParams {
   url: string;
   schema: IcebergSchema;
   rewriteParquet?: boolean | undefined;
+  partitions?: Record<string, string>;
 }
 interface MaybeMoveFileResult {
   s3Url: string;
@@ -142,7 +144,11 @@ async function _maybeMoveFile(
   let stats: Omit<AddFile, 'file' | 'partitions'>;
 
   if (params.rewriteParquet) {
-    const result = await rewriteParquet(fileBuffer, params.schema);
+    const result = await rewriteParquet(
+      fileBuffer,
+      params.schema,
+      params.partitions
+    );
     const upload = new Upload({
       client: s3_client,
       params: { Bucket: params.bucket, Key: params.key, Body: result.buffer },

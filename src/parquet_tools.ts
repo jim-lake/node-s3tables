@@ -106,7 +106,8 @@ export interface RewriteParquetResult {
 
 export async function rewriteParquet(
   inputBuffer: Buffer,
-  schema: IcebergSchema
+  schema: IcebergSchema,
+  partitions?: Record<string, string>
 ): Promise<RewriteParquetResult> {
   const reader = await ParquetReader.openBuffer(inputBuffer, {
     treatInt96AsTimestamp: true,
@@ -126,7 +127,7 @@ export async function rewriteParquet(
   while ((row = await cursor.next())) {
     const converted: Record<string, unknown> = {};
     for (const field of schema.fields) {
-      const val = row[field.name];
+      const val = row[field.name] ?? partitions?.[field.name];
       converted[field.name] = convertValue(val, field.type);
     }
     await writer.appendRow(converted);
