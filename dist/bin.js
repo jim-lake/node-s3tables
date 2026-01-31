@@ -5,6 +5,10 @@ var node_util = require('node:util');
 var nodeS3tables = require('node-s3tables');
 
 /* eslint-disable no-console */
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+    process.exit(1);
+});
 const { positionals, values } = node_util.parseArgs({
     allowPositionals: true,
     options: {
@@ -14,6 +18,7 @@ const { positionals, values } = node_util.parseArgs({
         files: { type: 'string' },
         'max-snapshots': { type: 'string' },
         'redshift-manifest-url': { type: 'string' },
+        'rewrite-parquet': { type: 'boolean' },
     },
 });
 const [command, tableBucketARN, namespace, name] = positionals;
@@ -21,14 +26,14 @@ if (!command || !tableBucketARN || !namespace || !name) {
     console.error('Usage: node-s3tables <command> <tableBucketARN> <namespace> <name> [options]\n');
     console.error('Commands:');
     console.error('  compact      Compact manifest files');
-    console.error('    Options: --force-rewrite');
+    console.error('    Options: [--force-rewrite]');
     console.error('');
     console.error('  add_files    Add data files to table');
     console.error('    Options: --spec-id <id> --schema-id <id> --files <json> [--max-snapshots <n>]');
     console.error('    Example: --files \'[{"file":"s3://bucket/data.parquet","partitions":{},"recordCount":"1000","fileSize":"52428"}]\'');
     console.error('');
     console.error('  import_redshift    Import redshift manifest created by UNLOAD');
-    console.error('    Options: --redshift-manifest-url s3://s3table-bucket/unload/manfiest');
+    console.error('    Options: --redshift-manifest-url <s3url> [--rewrite-parquet]');
     console.error('');
     process.exit(-1);
 }
@@ -95,11 +100,14 @@ else if (command === 'import_redshift') {
         console.error('  --redshift-manifest-url s3://s3table-bucket/exported_manfiest.json');
         process.exit(-1);
     }
+    const rewriteParquet = Boolean(values['rewrite-parquet']);
+    console.log('Importing file:', redshiftManifestUrl, 'to:', tableBucketARN, namespace, name, 'rewrite parquet:', rewriteParquet);
     nodeS3tables.importRedshiftManifest({
         tableBucketARN,
         namespace,
         name,
         redshiftManifestUrl,
+        rewriteParquet,
     })
         .then((result) => {
         console.log('Import result:', result);

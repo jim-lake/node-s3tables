@@ -14,6 +14,7 @@ var signatureV4 = require('@smithy/signature-v4');
 var sha256Js = require('@aws-crypto/sha256-js');
 var protocolHttp = require('@smithy/protocol-http');
 var credentialProviderNode = require('@aws-sdk/credential-provider-node');
+var parquetjs = require('parquetjs');
 
 function _interopNamespaceDefault(e) {
     var n = Object.create(null);
@@ -674,7 +675,7 @@ function _outputType(transform, sourceType) {
     }
     return null;
 }
-function _encodeValue(raw, transform, out_type) {
+function encodeValue(raw, transform, out_type) {
     if (raw === null || transform === null || out_type === null) {
         return null;
     }
@@ -723,11 +724,44 @@ function _encodeValue(raw, transform, out_type) {
                     buf.writeUInt8(raw ? 1 : 0);
                     return buf;
                 }
-                case 'binary':
-                case 'date':
-                case 'time':
+                case 'date': {
+                    // Iceberg date is days since 1970-01-01 as int32
+                    let days;
+                    if (typeof raw === 'string') {
+                        days = Math.floor(new Date(raw).getTime() / (24 * 3600 * 1000));
+                    }
+                    else if (typeof raw === 'number') {
+                        days = raw;
+                    }
+                    else {
+                        throw new Error('date requires string or number');
+                    }
+                    const buf = Buffer.alloc(4);
+                    buf.writeInt32LE(days);
+                    return buf;
+                }
                 case 'timestamp':
-                case 'timestamptz':
+                case 'timestamptz': {
+                    // Iceberg timestamp is microseconds since epoch as int64
+                    let micros;
+                    if (typeof raw === 'string') {
+                        micros = BigInt(new Date(raw).getTime()) * 1000n;
+                    }
+                    else if (typeof raw === 'number') {
+                        micros = BigInt(raw);
+                    }
+                    else if (typeof raw === 'bigint') {
+                        micros = raw;
+                    }
+                    else {
+                        throw new Error('timestamp requires string, number, or bigint');
+                    }
+                    const buf = Buffer.alloc(8);
+                    buf.writeBigInt64LE(micros);
+                    return buf;
+                }
+                case 'time':
+                case 'binary':
                     throw new Error(`Identity not implemented for type ${out_type}`);
                 default:
                     throw new Error(`Identity not implemented for type ${out_type}`);
@@ -800,7 +834,7 @@ function makeBounds(partitions, spec, schema) {
             return null;
         }
         const out_type = _outputType(f.transform, schemaField.type);
-        return _encodeValue(raw, f.transform, out_type);
+        return encodeValue(raw, f.transform, out_type);
     });
 }
 function compareBounds(a, b, field, schema) {
@@ -1794,6 +1828,195 @@ function _randomBigInt64$1() {
     return ret;
 }
 
+const JULIAN_UNIX_EPOCH_DIFF = 2440588;
+const NANOS_PER_DAY = 86400000000000n;
+const MICROS_PER_MILLI = 1000n;
+function icebergToParquetSchema(schema) {
+    const result = {};
+    for (const field of schema.fields) {
+        const pqType = icebergTypeToParquet(field.type);
+        if (pqType) {
+            result[field.name] = {
+                type: pqType,
+                compression: 'ZSTD',
+                optional: !field.required,
+            };
+        }
+    }
+    return result;
+}
+function icebergTypeToParquet(type) {
+    if (typeof type === 'string') {
+        switch (type) {
+            case 'boolean':
+                return 'BOOLEAN';
+            case 'int':
+                return 'INT32';
+            case 'long':
+                return 'INT64';
+            case 'float':
+                return 'FLOAT';
+            case 'double':
+                return 'DOUBLE';
+            case 'date':
+                return 'DATE';
+            case 'timestamp':
+            case 'timestamptz':
+                return 'TIMESTAMP_MICROS';
+            case 'string':
+                return 'UTF8';
+            case 'binary':
+                return 'BYTE_ARRAY';
+            case 'time':
+                return 'TIME_MICROS';
+            case 'uuid':
+                return 'UTF8';
+            default:
+                if (type.startsWith('decimal(')) {
+                    return 'BYTE_ARRAY';
+                }
+                return null;
+        }
+    }
+    return null;
+}
+function int96ToMicros(buf) {
+    const nanoOfDay = buf.readBigInt64LE(0);
+    const julianDay = buf.readInt32LE(8);
+    const daysSinceEpoch = julianDay - JULIAN_UNIX_EPOCH_DIFF;
+    const totalNanos = BigInt(daysSinceEpoch) * NANOS_PER_DAY + nanoOfDay;
+    return totalNanos / 1000n;
+}
+function convertValue(value, icebergType) {
+    if (value === null || value === undefined) {
+        return value;
+    }
+    if (Buffer.isBuffer(value) && value.length === 12) {
+        if (typeof icebergType === 'string' &&
+            (icebergType === 'timestamp' || icebergType === 'timestamptz')) {
+            return int96ToMicros(value);
+        }
+    }
+    if (value instanceof Date) {
+        if (typeof icebergType === 'string' &&
+            (icebergType === 'timestamp' || icebergType === 'timestamptz')) {
+            return BigInt(value.getTime()) * MICROS_PER_MILLI;
+        }
+    }
+    return value;
+}
+async function rewriteParquet(params) {
+    const { inputBuffer, inputS3, s3Client, bucket, key, schema, partitions } = params;
+    const reader = inputS3
+        ? await parquetjs.ParquetReader.openS3(s3Client, inputS3, {
+            treatInt96AsTimestamp: true,
+        })
+        : await parquetjs.ParquetReader.openBuffer(inputBuffer, {
+            treatInt96AsTimestamp: true,
+        });
+    const cursor = reader.getCursor();
+    const pqSchemaFields = icebergToParquetSchema(schema);
+    const pqSchema = new parquetjs.ParquetSchema(pqSchemaFields);
+    let fileSize = 0n;
+    const stream = new node_stream.PassThrough();
+    stream.on('data', (chunk) => {
+        fileSize += BigInt(chunk.length);
+    });
+    const writer = await parquetjs.ParquetWriter.openStream(pqSchema, stream);
+    const upload = new libStorage.Upload({
+        client: s3Client,
+        params: { Bucket: bucket, Key: key, Body: stream },
+        leavePartsOnError: false,
+    });
+    const uploadPromise = upload.done();
+    let row;
+    let rowCount = 0;
+    while ((row = await cursor.next())) {
+        const converted = {};
+        for (const field of schema.fields) {
+            const val = row[field.name] ?? partitions?.[field.name];
+            converted[field.name] = convertValue(val, field.type);
+        }
+        await writer.appendRow(converted);
+        rowCount++;
+        // Clear row group array after processing to free memory
+        if (rowCount % 100000 === 0) {
+            cursor.rowGroup = [];
+            if (global.gc)
+                global.gc();
+        }
+    }
+    const envelopeWriter = writer.envelopeWriter;
+    await reader.close();
+    await writer.close();
+    await uploadPromise;
+    const stats = extractWriterStats(envelopeWriter, schema);
+    return { fileSize, stats };
+}
+function extractWriterStats(envelopeWriter, schema) {
+    const columnSizes = {};
+    const valueCounts = {};
+    const nullValueCounts = {};
+    const lowerBounds = {};
+    const upperBounds = {};
+    let recordCount = 0n;
+    for (const rg of envelopeWriter.rowGroups) {
+        for (const column of rg.columns) {
+            const fieldName = column.meta_data?.path_in_schema?.[0];
+            if (fieldName && column.meta_data) {
+                if (column.meta_data.total_compressed_size !== undefined) {
+                    columnSizes[fieldName] =
+                        (columnSizes[fieldName] ?? 0n) +
+                            BigInt(column.meta_data.total_compressed_size);
+                }
+                if (column.meta_data.num_values !== undefined) {
+                    const count = BigInt(column.meta_data.num_values);
+                    valueCounts[fieldName] = (valueCounts[fieldName] ?? 0n) + count;
+                    if (recordCount < count) {
+                        recordCount = count;
+                    }
+                }
+                if (column.meta_data.statistics) {
+                    if (column.meta_data.statistics.null_count !== undefined) {
+                        nullValueCounts[fieldName] =
+                            (nullValueCounts[fieldName] ?? 0n) +
+                                BigInt(column.meta_data.statistics.null_count);
+                    }
+                    const field = schema.fields.find((f) => f.name === fieldName);
+                    const fieldType = field && typeof field.type === 'string' ? field.type : null;
+                    const minVal = column.meta_data.statistics.min_value ?? null;
+                    const maxVal = column.meta_data.statistics.max_value ?? null;
+                    const minBuf = Buffer.isBuffer(minVal)
+                        ? minVal
+                        : encodeValue(minVal, 'identity', fieldType);
+                    const maxBuf = Buffer.isBuffer(maxVal)
+                        ? maxVal
+                        : encodeValue(maxVal, 'identity', fieldType);
+                    if (minBuf &&
+                        (!lowerBounds[fieldName] ||
+                            Buffer.compare(minBuf, lowerBounds[fieldName]) < 0)) {
+                        lowerBounds[fieldName] = minBuf;
+                    }
+                    if (maxBuf &&
+                        (!upperBounds[fieldName] ||
+                            Buffer.compare(maxBuf, upperBounds[fieldName]) > 0)) {
+                        upperBounds[fieldName] = maxBuf;
+                    }
+                }
+            }
+        }
+    }
+    return {
+        fileSize: 0n,
+        recordCount,
+        columnSizes: Object.keys(columnSizes).length > 0 ? columnSizes : null,
+        valueCounts: Object.keys(valueCounts).length > 0 ? valueCounts : null,
+        nullValueCounts: Object.keys(nullValueCounts).length > 0 ? nullValueCounts : null,
+        lowerBounds: Object.keys(lowerBounds).length > 0 ? lowerBounds : null,
+        upperBounds: Object.keys(upperBounds).length > 0 ? upperBounds : null,
+    };
+}
+
 async function importRedshiftManifest(params) {
     const { credentials } = params;
     const region = params.tableBucketARN.split(':')[3];
@@ -1801,6 +2024,13 @@ async function importRedshiftManifest(params) {
         throw new Error('bad tableBucketARN');
     }
     const manifest = await _downloadRedshift(params);
+    // Sort entries by content_length descending (biggest files first)
+    manifest.entries.sort((a, b) => {
+        const sizeA = Number(a.meta?.content_length ?? 0);
+        const sizeB = Number(b.meta?.content_length ?? 0);
+        return sizeB - sizeA;
+    });
+    console.log(`Sorted ${manifest.entries.length} files by size (biggest first)`);
     const metadata = await getMetadata(params);
     const bucket = metadata.location.split('/').slice(-1)[0];
     if (!bucket) {
@@ -1808,10 +2038,15 @@ async function importRedshiftManifest(params) {
     }
     const import_prefix = `data/${node_crypto.randomUUID()}/`;
     const lists = [];
+    let fileCount = 0;
+    const totalFiles = manifest.entries.length;
+    const BATCH_SIZE = 10;
+    let lastResult = null;
     for (const entry of manifest.entries) {
+        fileCount++;
         const { url } = entry;
-        const { content_length, record_count } = entry.meta;
         const file = url.split('/').pop() ?? '';
+        const fileSize = entry.meta?.content_length ?? 0;
         const parts = [...url.matchAll(/\/([^=/]*=[^/=]*)/g)].map((m) => m[1] ?? '');
         const partitions = {};
         for (const part of parts) {
@@ -1821,6 +2056,10 @@ async function importRedshiftManifest(params) {
         const keys = Object.keys(partitions);
         const specId = params.specId ?? _findSpec(metadata, keys);
         const schemaId = params.schemaId ?? _findSchema(metadata, manifest);
+        const schema = metadata.schemas.find((s) => s['schema-id'] === schemaId);
+        if (!schema) {
+            throw new Error(`schema ${schemaId} not found`);
+        }
         let list = lists.find((l) => l.schemaId === schemaId && l.specId === specId);
         if (!list) {
             list = { specId, schemaId, files: [] };
@@ -1828,21 +2067,49 @@ async function importRedshiftManifest(params) {
         }
         const part_path = parts.length > 0 ? `${parts.join('/')}/` : '';
         const key = import_prefix + part_path + file;
-        list.files.push({
-            file: await _maybeMoveFile({ credentials, region, bucket, key, url }),
+        console.log(`Processing file ${fileCount}/${totalFiles}: ${file} (${fileSize} bytes)`);
+        const { s3Url, stats } = await _maybeMoveFile({
+            credentials,
+            region,
+            bucket,
+            key,
+            url,
+            schema,
+            rewriteParquet: params.rewriteParquet,
             partitions,
-            fileSize: BigInt(content_length),
-            recordCount: BigInt(record_count),
+        });
+        list.files.push({ file: s3Url, partitions, ...stats });
+        if (fileCount % BATCH_SIZE === 0) {
+            console.log(`Committing batch of ${BATCH_SIZE} files...`);
+            lastResult = await addDataFiles({
+                credentials,
+                tableBucketARN: params.tableBucketARN,
+                namespace: params.namespace,
+                name: params.name,
+                lists,
+                retryCount: params.retryCount,
+            });
+            lists.length = 0;
+            if (global.gc) {
+                global.gc();
+            }
+        }
+    }
+    if (lists.length > 0 && lists.some((l) => l.files.length > 0)) {
+        console.log(`Committing final batch of ${lists.reduce((sum, l) => sum + l.files.length, 0)} files...`);
+        lastResult = await addDataFiles({
+            credentials,
+            tableBucketARN: params.tableBucketARN,
+            namespace: params.namespace,
+            name: params.name,
+            lists,
+            retryCount: params.retryCount,
         });
     }
-    return addDataFiles({
-        credentials,
-        tableBucketARN: params.tableBucketARN,
-        namespace: params.namespace,
-        name: params.name,
-        lists,
-        retryCount: params.retryCount,
-    });
+    if (!lastResult) {
+        throw new Error('No files were processed');
+    }
+    return lastResult;
 }
 async function _downloadRedshift(params) {
     const s3_client = getS3Client(params);
@@ -1856,25 +2123,110 @@ async function _downloadRedshift(params) {
     return parse(body);
 }
 async function _maybeMoveFile(params) {
-    const { bucket, key } = parseS3Url(params.url);
-    if (!bucket || !key) {
+    const { bucket: sourceBucket, key: sourceKey } = parseS3Url(params.url);
+    if (!sourceBucket || !sourceKey) {
         throw new Error(`bad entry url: ${params.url}`);
     }
-    if (bucket === params.bucket) {
-        return params.url;
-    }
     const s3_client = getS3Client(params);
-    const get = new clientS3.GetObjectCommand({ Bucket: bucket, Key: key });
-    const { Body } = await s3_client.send(get);
-    if (!Body) {
-        throw new Error(`body missing for file: ${params.url}`);
+    let s3Url;
+    let stats;
+    if (params.rewriteParquet) {
+        const result = await rewriteParquet({
+            inputS3: { Bucket: sourceBucket, Key: sourceKey },
+            schema: params.schema,
+            partitions: params.partitions,
+            s3Client: s3_client,
+            bucket: params.bucket,
+            key: params.key,
+        });
+        s3Url = `s3://${params.bucket}/${params.key}`;
+        stats = { ...result.stats, fileSize: result.fileSize };
     }
-    const upload = new libStorage.Upload({
-        client: s3_client,
-        params: { Bucket: params.bucket, Key: params.key, Body },
-    });
-    await upload.done();
-    return `s3://${params.bucket}/${params.key}`;
+    else {
+        const get = new clientS3.GetObjectCommand({ Bucket: sourceBucket, Key: sourceKey });
+        const { Body } = await s3_client.send(get);
+        if (!Body) {
+            throw new Error(`body missing for file: ${params.url}`);
+        }
+        const fileBuffer = Buffer.from(await Body.transformToByteArray());
+        stats = await _extractStats(fileBuffer, params.schema);
+        if (sourceBucket === params.bucket) {
+            s3Url = params.url;
+        }
+        else {
+            const upload = new libStorage.Upload({
+                client: s3_client,
+                params: { Bucket: params.bucket, Key: params.key, Body: fileBuffer },
+            });
+            await upload.done();
+            s3Url = `s3://${params.bucket}/${params.key}`;
+        }
+    }
+    return { s3Url, stats };
+}
+async function _extractStats(fileBuffer, schema) {
+    const reader = await parquetjs.ParquetReader.openBuffer(fileBuffer);
+    const rowGroups = reader.metadata.row_groups;
+    const columnSizes = {};
+    const valueCounts = {};
+    const nullValueCounts = {};
+    const lowerBounds = {};
+    const upperBounds = {};
+    let recordCount = 0n;
+    for (const rg of rowGroups) {
+        for (const column of rg.columns) {
+            const fieldName = column.meta_data?.path_in_schema?.[0];
+            if (fieldName && column.meta_data) {
+                const compressedSize = column.meta_data.total_compressed_size;
+                if (compressedSize?.buffer) {
+                    columnSizes[fieldName] =
+                        (columnSizes[fieldName] ?? 0n) +
+                            compressedSize.buffer.readBigInt64BE(compressedSize.offset);
+                }
+                const numValues = column.meta_data.num_values;
+                if (numValues?.buffer) {
+                    const count = numValues.buffer.readBigInt64BE(numValues.offset);
+                    valueCounts[fieldName] = (valueCounts[fieldName] ?? 0n) + count;
+                    if (recordCount < count) {
+                        recordCount = count;
+                    }
+                }
+                const stats = column.meta_data.statistics;
+                if (stats) {
+                    const nullCount = stats.null_count;
+                    if (nullCount?.buffer) {
+                        nullValueCounts[fieldName] =
+                            (nullValueCounts[fieldName] ?? 0n) +
+                                nullCount.buffer.readBigInt64BE(nullCount.offset);
+                    }
+                    const field = schema.fields.find((f) => f.name === fieldName);
+                    const fieldType = field && typeof field.type === 'string' ? field.type : null;
+                    const minBuf = encodeValue(stats.min_value ?? null, 'identity', fieldType);
+                    const maxBuf = encodeValue(stats.max_value ?? null, 'identity', fieldType);
+                    if (minBuf &&
+                        (!lowerBounds[fieldName] ||
+                            Buffer.compare(minBuf, lowerBounds[fieldName]) < 0)) {
+                        lowerBounds[fieldName] = minBuf;
+                    }
+                    if (maxBuf &&
+                        (!upperBounds[fieldName] ||
+                            Buffer.compare(maxBuf, upperBounds[fieldName]) > 0)) {
+                        upperBounds[fieldName] = maxBuf;
+                    }
+                }
+            }
+        }
+    }
+    await reader.close();
+    return {
+        fileSize: BigInt(fileBuffer.length),
+        recordCount,
+        columnSizes: Object.keys(columnSizes).length > 0 ? columnSizes : null,
+        valueCounts: Object.keys(valueCounts).length > 0 ? valueCounts : null,
+        nullValueCounts: Object.keys(nullValueCounts).length > 0 ? nullValueCounts : null,
+        lowerBounds: Object.keys(lowerBounds).length > 0 ? lowerBounds : null,
+        upperBounds: Object.keys(upperBounds).length > 0 ? upperBounds : null,
+    };
 }
 function _findSpec(metadata, keys) {
     if (keys.length === 0) {

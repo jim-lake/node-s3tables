@@ -163,6 +163,7 @@ interface ImportRedshiftManifestParams {
     schemaId?: number;
     specId?: number;
     retryCount?: number | undefined;
+    rewriteParquet?: boolean;
 }
 declare function importRedshiftManifest(params: ImportRedshiftManifestParams): Promise<AddDataFilesResult>;
 
