@@ -1,11 +1,21 @@
 {
   "entries": [
-    {"url":"s3://build-test-west-bucket/unload/test1/app=test-app2/ingest_date=2024-09-25/0000_part_00.parquet", "meta": { "content_length": 6414, "record_count": 69 }},
-    {"url":"s3://build-test-west-bucket/unload/test1/app=test-app2/ingest_date=2024-09-26/0000_part_00.parquet", "meta": { "content_length": 5514, "record_count": 11 }},
-    {"url":"s3://build-test-west-bucket/unload/test1/app=test-app2/ingest_date=2024-12-20/0000_part_00.parquet", "meta": { "content_length": 5818, "record_count": 13 }},
-    {"url":"s3://build-test-west-bucket/unload/test1/app=test-app2/ingest_date=2024-09-25/0001_part_00.parquet", "meta": { "content_length": 6372, "record_count": 66 }},
-    {"url":"s3://build-test-west-bucket/unload/test1/app=test-app2/ingest_date=2024-09-26/0001_part_00.parquet", "meta": { "content_length": 5528, "record_count": 10 }},
-    {"url":"s3://build-test-west-bucket/unload/test1/app=test-app2/ingest_date=2024-12-20/0001_part_00.parquet", "meta": { "content_length": 5698, "record_count": 13 }}
+    {"url":"s3://build-test-west-bucket/unload/try2/rs_example/app_log/app=test-app/ingest_date=2025-10-18/0000_part_00.json.zst", "meta": { "content_length": 590, "record_count": 17 }},
+    {"url":"s3://build-test-west-bucket/unload/try2/rs_example/app_log/app=test-app/ingest_date=2025-10-21/0000_part_00.json.zst", "meta": { "content_length": 394, "record_count": 3 }},
+    {"url":"s3://build-test-west-bucket/unload/try2/rs_example/app_log/app=test-app/ingest_date=2026-01-13/0000_part_00.json.zst", "meta": { "content_length": 339, "record_count": 5 }},
+    {"url":"s3://build-test-west-bucket/unload/try2/rs_example/app_log/app=test-app2/ingest_date=2024-09-25/0000_part_00.json.zst", "meta": { "content_length": 1345, "record_count": 69 }},
+    {"url":"s3://build-test-west-bucket/unload/try2/rs_example/app_log/app=test-app2/ingest_date=2024-09-26/0000_part_00.json.zst", "meta": { "content_length": 656, "record_count": 11 }},
+    {"url":"s3://build-test-west-bucket/unload/try2/rs_example/app_log/app=test-app2/ingest_date=2024-12-20/0000_part_00.json.zst", "meta": { "content_length": 848, "record_count": 13 }},
+    {"url":"s3://build-test-west-bucket/unload/try2/rs_example/app_log/app=test-app/ingest_date=2025-08-06/0001_part_00.json.zst", "meta": { "content_length": 5819, "record_count": 196 }},
+    {"url":"s3://build-test-west-bucket/unload/try2/rs_example/app_log/app=test-app/ingest_date=2025-08-07/0001_part_00.json.zst", "meta": { "content_length": 5356, "record_count": 137 }},
+    {"url":"s3://build-test-west-bucket/unload/try2/rs_example/app_log/app=test-app/ingest_date=2025-09-25/0001_part_00.json.zst", "meta": { "content_length": 314, "record_count": 3 }},
+    {"url":"s3://build-test-west-bucket/unload/try2/rs_example/app_log/app=test-app/ingest_date=2025-10-17/0001_part_00.json.zst", "meta": { "content_length": 281, "record_count": 3 }},
+    {"url":"s3://build-test-west-bucket/unload/try2/rs_example/app_log/app=test-app/ingest_date=2025-10-18/0001_part_00.json.zst", "meta": { "content_length": 579, "record_count": 19 }},
+    {"url":"s3://build-test-west-bucket/unload/try2/rs_example/app_log/app=test-app/ingest_date=2025-10-21/0001_part_00.json.zst", "meta": { "content_length": 282, "record_count": 3 }},
+    {"url":"s3://build-test-west-bucket/unload/try2/rs_example/app_log/app=test-app/ingest_date=2026-01-13/0001_part_00.json.zst", "meta": { "content_length": 336, "record_count": 4 }},
+    {"url":"s3://build-test-west-bucket/unload/try2/rs_example/app_log/app=test-app2/ingest_date=2024-09-25/0001_part_00.json.zst", "meta": { "content_length": 1342, "record_count": 66 }},
+    {"url":"s3://build-test-west-bucket/unload/try2/rs_example/app_log/app=test-app2/ingest_date=2024-09-26/0001_part_00.json.zst", "meta": { "content_length": 660, "record_count": 10 }},
+    {"url":"s3://build-test-west-bucket/unload/try2/rs_example/app_log/app=test-app2/ingest_date=2024-12-20/0001_part_00.json.zst", "meta": { "content_length": 816, "record_count": 13 }}
   ],
   "schema": {
     "elements": [
