@@ -69,6 +69,11 @@ declare module 'parquetjs' {
     treatInt96AsTimestamp?: boolean;
   }
 
+  interface S3Params {
+    Bucket: string;
+    Key: string;
+  }
+
   export class ParquetWriter {
     static openStream(
       schema: ParquetSchema,
@@ -85,6 +90,12 @@ declare module 'parquetjs' {
   export class ParquetReader {
     static openBuffer(
       buffer: Buffer,
+      options?: ParquetReaderOptions
+    ): Promise<ParquetReader>;
+
+    static openS3(
+      client: any,
+      params: S3Params,
       options?: ParquetReaderOptions
     ): Promise<ParquetReader>;
 

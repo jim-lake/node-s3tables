@@ -128,37 +128,36 @@ interface MaybeMoveFileResult {
 async function _maybeMoveFile(
   params: MaybeMoveFileParams
 ): Promise<MaybeMoveFileResult> {
-  const { bucket, key } = parseS3Url(params.url);
-  if (!bucket || !key) {
+  const { bucket: sourceBucket, key: sourceKey } = parseS3Url(params.url);
+  if (!sourceBucket || !sourceKey) {
     throw new Error(`bad entry url: ${params.url}`);
   }
   const s3_client = getS3Client(params);
-  const get = new GetObjectCommand({ Bucket: bucket, Key: key });
-  const { Body } = await s3_client.send(get);
-  if (!Body) {
-    throw new Error(`body missing for file: ${params.url}`);
-  }
-  const fileBuffer = Buffer.from(await Body.transformToByteArray());
 
   let s3Url: string;
   let stats: Omit<AddFile, 'file' | 'partitions'>;
 
   if (params.rewriteParquet) {
-    const result = await rewriteParquet(
-      fileBuffer,
-      params.schema,
-      params.partitions
-    );
-    const upload = new Upload({
-      client: s3_client,
-      params: { Bucket: params.bucket, Key: params.key, Body: result.buffer },
+    const result = await rewriteParquet({
+      schema: params.schema,
+      partitions: params.partitions,
+      s3Client: s3_client,
+      bucket: params.bucket,
+      key: params.key,
+      sourceBucket,
+      sourceKey,
     });
-    await upload.done();
     s3Url = `s3://${params.bucket}/${params.key}`;
-    stats = { ...result.stats, fileSize: BigInt(result.buffer.length) };
+    stats = { ...result.stats, fileSize: result.fileSize };
   } else {
+    const get = new GetObjectCommand({ Bucket: sourceBucket, Key: sourceKey });
+    const { Body } = await s3_client.send(get);
+    if (!Body) {
+      throw new Error(`body missing for file: ${params.url}`);
+    }
+    const fileBuffer = Buffer.from(await Body.transformToByteArray());
     stats = await _extractStats(fileBuffer, params.schema);
-    if (bucket === params.bucket) {
+    if (sourceBucket === params.bucket) {
       s3Url = params.url;
     } else {
       const upload = new Upload({

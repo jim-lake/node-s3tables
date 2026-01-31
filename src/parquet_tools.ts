@@ -1,7 +1,9 @@
 import { PassThrough } from 'node:stream';
 import { ParquetReader, ParquetWriter, ParquetSchema } from 'parquetjs';
+import { Upload } from '@aws-sdk/lib-storage';
 import { encodeValue } from './avro_transform';
 
+import type { S3Client } from '@aws-sdk/client-s3';
 import type { IcebergSchema, IcebergType, IcebergSchemaField } from './iceberg';
 import type { AddFile } from './manifest';
 
@@ -100,28 +102,51 @@ function convertValue(value: unknown, icebergType: IcebergType): unknown {
 }
 
 export interface RewriteParquetResult {
-  buffer: Buffer;
+  fileSize: bigint;
   stats: Omit<AddFile, 'file' | 'partitions'>;
 }
 
+export interface RewriteParquetParams {
+  schema: IcebergSchema;
+  partitions?: Record<string, string> | undefined;
+  s3Client: S3Client;
+  bucket: string;
+  key: string;
+  sourceBucket: string;
+  sourceKey: string;
+}
+
 export async function rewriteParquet(
-  inputBuffer: Buffer,
-  schema: IcebergSchema,
-  partitions?: Record<string, string>
+  params: RewriteParquetParams
 ): Promise<RewriteParquetResult> {
-  const reader = await ParquetReader.openBuffer(inputBuffer, {
-    treatInt96AsTimestamp: true,
-  });
+  const { s3Client, bucket, key, schema, partitions, sourceBucket, sourceKey } =
+    params;
+
+  const reader = await ParquetReader.openS3(
+    s3Client,
+    { Bucket: sourceBucket, Key: sourceKey },
+    { treatInt96AsTimestamp: true }
+  );
   const cursor = reader.getCursor();
 
   const pqSchemaFields = icebergToParquetSchema(schema);
   const pqSchema = new ParquetSchema(pqSchemaFields);
 
-  const stream = new PassThrough();
-  const chunks: Buffer[] = [];
-  stream.on('data', (chunk: Buffer) => chunks.push(chunk));
+  let fileSize = 0n;
+  const stream = new PassThrough({
+    transform(chunk: Buffer, _enc, done) {
+      fileSize += BigInt(chunk.length);
+      done(null, chunk);
+    },
+  });
 
   const writer = await ParquetWriter.openStream(pqSchema, stream);
+
+  const upload = new Upload({
+    client: s3Client,
+    params: { Bucket: bucket, Key: key, Body: stream },
+    leavePartsOnError: false,
+  });
 
   let row: Record<string, unknown> | null;
   while ((row = await cursor.next())) {
@@ -134,13 +159,13 @@ export async function rewriteParquet(
   }
 
   const envelopeWriter = writer.envelopeWriter;
-  await writer.close();
   await reader.close();
+  await writer.close();
+  await upload.done();
 
-  const buffer = Buffer.concat(chunks);
   const stats = extractWriterStats(envelopeWriter, schema);
 
-  return { buffer, stats };
+  return { fileSize, stats };
 }
 
 interface ParquetWriterColumnMetadata {
