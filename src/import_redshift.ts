@@ -177,13 +177,23 @@ async function _convertJsonToParquet(
   }
 
   const parquetSchema = _buildParquetSchema(params.schema);
-  const chunks: Buffer[] = [];
-  const parquetStream = new PassThrough();
-  parquetStream.on('data', (chunk: Buffer) => chunks.push(chunk));
+
+  let recordCount = 0n;
+  let fileSize = 0n;
+
+  const parquetStream = new PassThrough({
+    transform(chunk: Buffer, _enc, done) {
+      fileSize += BigInt(chunk.length);
+      done(null, chunk);
+    },
+  });
 
   const writer = await ParquetWriter.openStream(parquetSchema, parquetStream);
 
-  let recordCount = 0n;
+  const uploadPromise = new Upload({
+    client: s3_client,
+    params: { Bucket: params.bucket, Key: params.key, Body: parquetStream },
+  }).done();
 
   await pipeline(
     Body as Readable,
@@ -206,19 +216,13 @@ async function _convertJsonToParquet(
   );
 
   await writer.close();
-  const fileBuffer = Buffer.concat(chunks);
+  await uploadPromise;
 
   const stats = _extractStatsFromWriter(writer, params.schema);
 
-  const upload = new Upload({
-    client: s3_client,
-    params: { Bucket: params.bucket, Key: params.key, Body: fileBuffer },
-  });
-  await upload.done();
-
   return {
     s3Url: `s3://${params.bucket}/${params.key}`,
-    stats: { ...stats, fileSize: BigInt(fileBuffer.length), recordCount },
+    stats: { ...stats, fileSize, recordCount },
   };
 }
 
