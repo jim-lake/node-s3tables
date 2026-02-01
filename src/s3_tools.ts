@@ -20,9 +20,9 @@ import type { Schema, Type } from 'avsc';
 import type { ManifestListRecord } from './avro_types';
 
 const S3_REGEX = /^s3:\/\/([^/]+)\/(.+)$/;
-export function parseS3Url(url: string) {
+export function parseS3Url(url: string): { bucket: string; key: string } {
   const match = S3_REGEX.exec(url);
-  if (!match) {
+  if (!match?.[1] || !match[2]) {
     throw new Error('Invalid S3 URL');
   }
   return { bucket: match[1], key: match[2] };

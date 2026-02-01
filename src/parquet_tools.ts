@@ -1,7 +1,6 @@
 import { PassThrough } from 'node:stream';
 import { ParquetReader, ParquetWriter, ParquetSchema } from 'parquetjs';
 import { Upload } from '@aws-sdk/lib-storage';
-import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { encodeValue } from './avro_transform';
 
 import type { S3Client } from '@aws-sdk/client-s3';
@@ -127,9 +126,13 @@ export async function rewriteParquet(
     ? await ParquetReader.openS3(s3Client, inputS3, {
         treatInt96AsTimestamp: true,
       })
-    : await ParquetReader.openBuffer(inputBuffer!, {
-        treatInt96AsTimestamp: true,
-      });
+    : inputBuffer
+      ? await ParquetReader.openBuffer(inputBuffer, {
+          treatInt96AsTimestamp: true,
+        })
+      : (() => {
+          throw new Error('Either inputS3 or inputBuffer must be provided');
+        })();
 
   const cursor = reader.getCursor();
   const pqSchema = new ParquetSchema(icebergToParquetSchema(schema));

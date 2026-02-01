@@ -11,6 +11,8 @@ import { IcebergHttpError } from './request';
 import { setCurrentCommit } from './snapshot';
 
 export { IcebergHttpError } from './request';
+export { parseS3Url, downloadAvro } from './s3_tools';
+export { ManifestListSchema } from './avro_schema';
 
 export * from './add_data_files';
 export * from './import_redshift';

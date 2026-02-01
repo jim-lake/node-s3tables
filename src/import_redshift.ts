@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { createZstdDecompress } from 'node:zlib';
-import { Readable, Transform, Writable, PassThrough } from 'node:stream';
+import type { Readable } from 'node:stream';
+import { Transform, Writable, PassThrough } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
@@ -13,11 +14,7 @@ import { parseS3Url, getS3Client } from './s3_tools';
 import type { AwsCredentialIdentity } from '@aws-sdk/types';
 import type { AddDataFilesResult, AddFileList } from './add_data_files';
 import type { AddFile } from './manifest';
-import type {
-  IcebergMetadata,
-  IcebergSchema,
-  IcebergSchemaField,
-} from './iceberg';
+import type { IcebergMetadata, IcebergSchema } from './iceberg';
 
 export default { importRedshiftManifest };
 
@@ -30,6 +27,7 @@ export interface ImportRedshiftManifestParams {
   schemaId?: number;
   specId?: number;
   retryCount?: number | undefined;
+  rewriteParquet?: boolean;
 }
 
 export async function importRedshiftManifest(
@@ -42,8 +40,8 @@ export async function importRedshiftManifest(
   }
   const manifest = await _downloadRedshift(params);
   manifest.entries.sort((a, b) => {
-    const sizeA = Number(a.meta?.content_length ?? 0);
-    const sizeB = Number(b.meta?.content_length ?? 0);
+    const sizeA = Number(a.meta.content_length);
+    const sizeB = Number(b.meta.content_length);
     return sizeB - sizeA;
   });
 
@@ -181,26 +179,28 @@ async function _convertJsonToParquet(
   const parquetSchema = _buildParquetSchema(params.schema);
   const chunks: Buffer[] = [];
   const parquetStream = new PassThrough();
-  parquetStream.on('data', (chunk) => chunks.push(chunk));
+  parquetStream.on('data', (chunk: Buffer) => chunks.push(chunk));
 
   const writer = await ParquetWriter.openStream(parquetSchema, parquetStream);
 
   let recordCount = 0n;
 
   await pipeline(
-    Readable.from(Body as any),
+    Body as Readable,
     createZstdDecompress(),
     _createJsonLineTransform(params.schema),
     new Writable({
       objectMode: true,
-      async write(row, _encoding, callback) {
-        try {
-          await writer.appendRow(row);
-          recordCount++;
-          callback();
-        } catch (err) {
-          callback(err as Error);
-        }
+      write(row: Record<string, unknown>, _encoding, callback) {
+        writer
+          .appendRow(row)
+          .then(() => {
+            recordCount++;
+            callback();
+          })
+          .catch((err: unknown) => {
+            callback(err as Error);
+          });
       },
     })
   );
@@ -250,6 +250,10 @@ function _buildParquetSchema(schema: IcebergSchema) {
       case 'date':
         parquetType = 'DATE';
         break;
+      case 'string':
+      case 'binary':
+      case 'time':
+      case 'uuid':
       default:
         parquetType = 'UTF8';
     }
@@ -258,11 +262,38 @@ function _buildParquetSchema(schema: IcebergSchema) {
   return new ParquetSchema(fields);
 }
 
+interface ParquetColumnMetadata {
+  path_in_schema?: string[];
+  total_compressed_size?: number | bigint | null;
+  num_values?: number | bigint | null;
+  statistics?: {
+    null_count?: number | bigint | null;
+    min_value?: Buffer | string;
+    max_value?: Buffer | string;
+  };
+}
+
+interface ParquetColumn {
+  meta_data?: ParquetColumnMetadata;
+}
+
+interface ParquetRowGroup {
+  columns: ParquetColumn[];
+}
+
+interface ParquetEnvelopeWriter {
+  rowGroups?: ParquetRowGroup[];
+}
+
+interface ParquetWriterInternal {
+  envelopeWriter?: ParquetEnvelopeWriter;
+}
+
 function _extractStatsFromWriter(
-  writer: any,
+  writer: ParquetWriterInternal,
   schema: IcebergSchema
 ): Omit<AddFile, 'file' | 'partitions' | 'fileSize' | 'recordCount'> {
-  const rowGroups = writer.envelopeWriter?.rowGroups || [];
+  const rowGroups = writer.envelopeWriter?.rowGroups ?? [];
 
   const columnSizes: Record<string, bigint> = {};
   const valueCounts: Record<string, bigint> = {};
@@ -275,13 +306,13 @@ function _extractStatsFromWriter(
       const fieldName = column.meta_data?.path_in_schema?.[0];
       if (fieldName && column.meta_data) {
         const compressedSize = column.meta_data.total_compressed_size;
-        if (compressedSize != null) {
+        if (compressedSize !== null && compressedSize !== undefined) {
           columnSizes[fieldName] =
             (columnSizes[fieldName] ?? 0n) + BigInt(compressedSize);
         }
 
         const numValues = column.meta_data.num_values;
-        if (numValues != null) {
+        if (numValues !== null && numValues !== undefined) {
           valueCounts[fieldName] =
             (valueCounts[fieldName] ?? 0n) + BigInt(numValues);
         }
@@ -289,7 +320,7 @@ function _extractStatsFromWriter(
         const stats = column.meta_data.statistics;
         if (stats) {
           const nullCount = stats.null_count;
-          if (nullCount != null) {
+          if (nullCount !== null && nullCount !== undefined) {
             nullValueCounts[fieldName] =
               (nullValueCounts[fieldName] ?? 0n) + BigInt(nullCount);
           }
@@ -336,7 +367,7 @@ function _extractStatsFromWriter(
 
 function _encodeStatValue(
   value: Buffer | string,
-  fieldType: string | null
+  _fieldType: string | null
 ): Buffer | null {
   if (Buffer.isBuffer(value)) {
     return value;

@@ -9,10 +9,14 @@ import {
   addSchema,
   addPartitionSpec,
   importRedshiftManifest,
+  downloadAvro,
+  parseS3Url,
 } from '../src';
+import { ManifestListSchema, makeManifestSchema } from '../src/avro_schema';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import type { ManifestListRecord, ManifestFileRecord } from '../src/avro_types';
 
 interface ManifestEntry {
   url: string;
@@ -137,8 +141,9 @@ void test('redshift import manifest test', async (t) => {
     // Upload all json.zst files maintaining partition structure
     for (const appDir of ['app=test-app', 'app=test-app2']) {
       const appPath = join(testFilesDir, appDir);
-      if (!statSync(appPath).isDirectory()) {
-        continue;
+      const stat = statSync(appPath);
+      if (!stat.isDirectory()) {
+        break;
       }
 
       const partitionDirs = readdirSync(appPath);
@@ -195,6 +200,94 @@ void test('redshift import manifest test', async (t) => {
 
     log('Import result:', result);
     assert(result.snapshotId, 'Expected snapshotId in result');
+  });
+
+  await t.test('validate stats in manifest', async () => {
+    const metadata = await getMetadata({
+      tableBucketARN: config.tableBucketARN,
+      namespace,
+      name,
+    });
+
+    const snapshot = metadata.snapshots.find(
+      (s) => s['snapshot-id'] === metadata['current-snapshot-id']
+    );
+    assert(snapshot, 'Current snapshot not found');
+
+    const manifestListPath = snapshot['manifest-list'];
+    log('Manifest list:', manifestListPath);
+
+    const { bucket: manifestListBucket, key: manifestListKey } =
+      parseS3Url(manifestListPath);
+
+    const region = config.tableBucketARN.split(':')[3];
+    assert(region, 'Region not found in tableBucketARN');
+
+    // Read manifest list
+    const manifestList = await downloadAvro<ManifestListRecord>({
+      region,
+      bucket: manifestListBucket,
+      key: manifestListKey,
+      avroSchema: ManifestListSchema,
+    });
+
+    assert(manifestList.length > 0, 'No manifest records found');
+    const manifestRecord = manifestList[0];
+    assert(manifestRecord, 'First manifest record is undefined');
+
+    // Read first manifest file
+    const manifestFilePath = manifestRecord.manifest_path;
+    const { bucket: manifestBucket, key: manifestKey } =
+      parseS3Url(manifestFilePath);
+
+    const spec = metadata['partition-specs'].find(
+      (s) => s['spec-id'] === manifestRecord.partition_spec_id
+    );
+    assert(spec, 'Partition spec not found');
+
+    const manifestFileSchema = makeManifestSchema(spec, metadata.schemas);
+
+    const manifestFiles = await downloadAvro<ManifestFileRecord>({
+      region,
+      bucket: manifestBucket,
+      key: manifestKey,
+      avroSchema: manifestFileSchema,
+    });
+
+    assert(manifestFiles.length > 0, 'No data files found in manifest');
+    const manifestEntry = manifestFiles[0];
+    assert(manifestEntry, 'First manifest entry is undefined');
+
+    const dataFile = manifestEntry.data_file;
+    assert(dataFile, 'data_file missing from manifest entry');
+
+    // Validate stats exist
+    log('Data file stats:', {
+      file_size_in_bytes: dataFile.file_size_in_bytes,
+      record_count: dataFile.record_count,
+      column_sizes: dataFile.column_sizes,
+      value_counts: dataFile.value_counts,
+      null_value_counts: dataFile.null_value_counts,
+      lower_bounds: dataFile.lower_bounds,
+      upper_bounds: dataFile.upper_bounds,
+    });
+
+    assert(dataFile.file_size_in_bytes, 'file_size_in_bytes missing');
+    assert(dataFile.record_count, 'record_count missing');
+    assert(dataFile.column_sizes, 'column_sizes missing');
+    assert(dataFile.value_counts, 'value_counts missing');
+    assert(dataFile.null_value_counts, 'null_value_counts missing');
+    assert(dataFile.lower_bounds, 'lower_bounds missing');
+    assert(dataFile.upper_bounds, 'upper_bounds missing');
+
+    // Validate column_sizes has entries
+    const columnSizes = dataFile.column_sizes;
+    const columnSizeKeys = Object.keys(columnSizes);
+    assert(
+      columnSizeKeys.length > 0,
+      'column_sizes should have at least one entry'
+    );
+    log('Column sizes keys:', columnSizeKeys);
   });
 
   await t.test('validate data with athena', async () => {
