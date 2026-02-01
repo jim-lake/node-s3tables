@@ -13,9 +13,10 @@ import {
   parseS3Url,
 } from '../src';
 import { ManifestListSchema, makeManifestSchema } from '../src/avro_schema';
-import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { ParquetReader } from 'parquetjs';
 import type { ManifestListRecord, ManifestFileRecord } from '../src/avro_types';
 
 interface ManifestEntry {
@@ -299,5 +300,94 @@ void test('redshift import with rewriteParquet test', async (t) => {
     );
     log('Dec 20 rows:', dec20Rows.length);
     assert.strictEqual(dec20Rows.length, 26, 'Expected 26 rows for 2024-12-20');
+  });
+
+  await t.test('validate ZSTD compression', async () => {
+    const metadata = await getMetadata({
+      tableBucketARN: config.tableBucketARN,
+      namespace,
+      name,
+    });
+
+    const snapshot = metadata.snapshots.find(
+      (s) => s['snapshot-id'] === metadata['current-snapshot-id']
+    );
+    assert(snapshot, 'Current snapshot not found');
+
+    const manifestListPath = snapshot['manifest-list'];
+    const { bucket: manifestListBucket, key: manifestListKey } =
+      parseS3Url(manifestListPath);
+
+    const region = config.tableBucketARN.split(':')[3];
+    assert(region, 'Region not found in tableBucketARN');
+
+    const manifestList = await downloadAvro<ManifestListRecord>({
+      region,
+      bucket: manifestListBucket,
+      key: manifestListKey,
+      avroSchema: ManifestListSchema,
+    });
+
+    const manifestRecord = manifestList[0];
+    assert(manifestRecord, 'First manifest record is undefined');
+
+    const manifestFilePath = manifestRecord.manifest_path;
+    const { bucket: manifestBucket, key: manifestKey } =
+      parseS3Url(manifestFilePath);
+
+    const spec = metadata['partition-specs'].find(
+      (s) => s['spec-id'] === manifestRecord.partition_spec_id
+    );
+    assert(spec, 'Partition spec not found');
+
+    const manifestFileSchema = makeManifestSchema(spec, metadata.schemas);
+
+    const manifestFiles = await downloadAvro<ManifestFileRecord>({
+      region,
+      bucket: manifestBucket,
+      key: manifestKey,
+      avroSchema: manifestFileSchema,
+    });
+
+    const manifestEntry = manifestFiles[0];
+    assert(manifestEntry, 'First manifest entry is undefined');
+
+    const dataFilePath = manifestEntry.data_file.file_path;
+    const { bucket: dataBucket, key: dataKey } = parseS3Url(dataFilePath);
+
+    const getCmd = new GetObjectCommand({ Bucket: dataBucket, Key: dataKey });
+    const { Body } = await clients.s3.send(getCmd);
+    assert(Body, 'Data file body missing');
+
+    const buffer = await Body.transformToByteArray();
+    const reader = await ParquetReader.openBuffer(Buffer.from(buffer));
+
+    interface ParquetMetadata {
+      row_groups?: {
+        columns: {
+          meta_data?: { codec?: number; path_in_schema?: string[] };
+        }[];
+      }[];
+    }
+
+    const parquetMetadata = reader.metadata as unknown as ParquetMetadata;
+    const rowGroups = parquetMetadata.row_groups ?? [];
+    assert(rowGroups.length > 0, 'No row groups found');
+
+    const ZSTD_CODEC = 6;
+    for (const rg of rowGroups) {
+      for (const column of rg.columns) {
+        const codec = column.meta_data?.codec;
+        const fieldName = column.meta_data?.path_in_schema?.[0] ?? 'unknown';
+        assert.strictEqual(
+          codec,
+          ZSTD_CODEC,
+          `Expected ZSTD compression (codec=6) for field ${fieldName}, got codec=${codec ?? 'undefined'}`
+        );
+      }
+    }
+
+    await reader.close();
+    log('ZSTD compression validation passed');
   });
 });

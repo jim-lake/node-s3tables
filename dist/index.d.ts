@@ -1,4 +1,6 @@
 import { AwsCredentialIdentity } from '@aws-sdk/types';
+import * as avsc from 'avsc';
+import { Schema } from 'avsc';
 
 type RawValue = string | number | bigint | Buffer | null;
 type PartitionRecord = Record<string, RawValue>;
@@ -253,6 +255,21 @@ interface SetCurrentCommitParams {
 }
 declare function setCurrentCommit(params: SetCurrentCommitParams): Promise<JSONObject>;
 
+declare function parseS3Url(url: string): {
+    bucket: string;
+    key: string;
+};
+interface DownloadAvroParams {
+    credentials?: AwsCredentialIdentity | undefined;
+    region: string;
+    bucket: string;
+    key: string;
+    avroSchema: Schema;
+}
+declare function downloadAvro<T>(params: DownloadAvroParams): Promise<T[]>;
+
+declare const ManifestListSchema: avsc.Schema;
+
 type CalculateWeightFunction = (group: ManifestListRecord[]) => number;
 interface ManifestCompactParams {
     credentials?: AwsCredentialIdentity;
@@ -285,5 +302,5 @@ declare const _default: {
     setCurrentCommit: typeof setCurrentCommit;
 };
 
-export { IcebergHttpError, addDataFiles, addManifest, addPartitionSpec, addSchema, _default as default, getMetadata, importRedshiftManifest, manifestCompact, maxBuffer, minBuffer, removeSnapshots, setCurrentCommit, submitSnapshot };
+export { IcebergHttpError, ManifestListSchema, addDataFiles, addManifest, addPartitionSpec, addSchema, _default as default, downloadAvro, getMetadata, importRedshiftManifest, manifestCompact, maxBuffer, minBuffer, parseS3Url, removeSnapshots, setCurrentCommit, submitSnapshot };
 export type { AddDataFilesParams, AddDataFilesResult, AddFile, AddFileList, AddManifestParams, AddPartitionSpecParams, AddSchemaParams, CalculateWeightFunction, GetMetadataParams, IcebergComplexType, IcebergMetadata, IcebergPartitionField, IcebergPartitionSpec, IcebergPrimitiveType, IcebergSchema, IcebergSchemaField, IcebergSnapshot, IcebergSnapshotSummary, IcebergTransform, IcebergType, IcebergUpdateResponse, ImportRedshiftManifestParams, ManifestCompactParams, ManifestCompactResult, ManifestListRecord, RemoveSnapshotsParams, ResolveConflictResult, SetCurrentCommitParams, SubmitSnapshotParams, SubmitSnapshotResult, TableLocation };

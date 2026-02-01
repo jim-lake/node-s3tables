@@ -189,7 +189,7 @@ interface ParquetEnvelopeWriter {
   rowGroups: ParquetWriterRowGroup[];
 }
 
-function extractWriterStats(
+export function extractWriterStats(
   envelopeWriter: ParquetEnvelopeWriter,
   schema: IcebergSchema
 ): Omit<AddFile, 'file' | 'partitions'> {

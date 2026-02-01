@@ -10,6 +10,7 @@ import { addDataFiles } from './add_data_files';
 import { parse } from './json';
 import { getMetadata } from './metadata';
 import { parseS3Url, getS3Client } from './s3_tools';
+import { icebergToParquetSchema, extractWriterStats } from './parquet_tools';
 
 import type { AwsCredentialIdentity } from '@aws-sdk/types';
 import type { AddDataFilesResult, AddFileList } from './add_data_files';
@@ -176,7 +177,9 @@ async function _convertJsonToParquet(
     throw new Error(`body missing for file: ${params.url}`);
   }
 
-  const parquetSchema = _buildParquetSchema(params.schema);
+  const parquetSchema = new ParquetSchema(
+    icebergToParquetSchema(params.schema)
+  );
 
   let recordCount = 0n;
   let fileSize = 0n;
@@ -218,168 +221,12 @@ async function _convertJsonToParquet(
   await writer.close();
   await uploadPromise;
 
-  const stats = _extractStatsFromWriter(writer, params.schema);
+  const stats = extractWriterStats(writer.envelopeWriter, params.schema);
 
   return {
     s3Url: `s3://${params.bucket}/${params.key}`,
     stats: { ...stats, fileSize, recordCount },
   };
-}
-
-function _buildParquetSchema(schema: IcebergSchema) {
-  const fields: Record<string, { type: string; optional?: boolean }> = {};
-  for (const field of schema.fields) {
-    const type = typeof field.type === 'string' ? field.type : 'string';
-    let parquetType: string;
-    switch (type) {
-      case 'int':
-        parquetType = 'INT32';
-        break;
-      case 'long':
-        parquetType = 'INT64';
-        break;
-      case 'float':
-        parquetType = 'FLOAT';
-        break;
-      case 'double':
-        parquetType = 'DOUBLE';
-        break;
-      case 'boolean':
-        parquetType = 'BOOLEAN';
-        break;
-      case 'timestamp':
-      case 'timestamptz':
-        parquetType = 'TIMESTAMP_MICROS';
-        break;
-      case 'date':
-        parquetType = 'DATE';
-        break;
-      case 'string':
-      case 'binary':
-      case 'time':
-      case 'uuid':
-      default:
-        parquetType = 'UTF8';
-    }
-    fields[field.name] = { type: parquetType, optional: !field.required };
-  }
-  return new ParquetSchema(fields);
-}
-
-interface ParquetColumnMetadata {
-  path_in_schema?: string[];
-  total_compressed_size?: number | bigint | null;
-  num_values?: number | bigint | null;
-  statistics?: {
-    null_count?: number | bigint | null;
-    min_value?: Buffer | string;
-    max_value?: Buffer | string;
-  };
-}
-
-interface ParquetColumn {
-  meta_data?: ParquetColumnMetadata;
-}
-
-interface ParquetRowGroup {
-  columns: ParquetColumn[];
-}
-
-interface ParquetEnvelopeWriter {
-  rowGroups?: ParquetRowGroup[];
-}
-
-interface ParquetWriterInternal {
-  envelopeWriter?: ParquetEnvelopeWriter;
-}
-
-function _extractStatsFromWriter(
-  writer: ParquetWriterInternal,
-  schema: IcebergSchema
-): Omit<AddFile, 'file' | 'partitions' | 'fileSize' | 'recordCount'> {
-  const rowGroups = writer.envelopeWriter?.rowGroups ?? [];
-
-  const columnSizes: Record<string, bigint> = {};
-  const valueCounts: Record<string, bigint> = {};
-  const nullValueCounts: Record<string, bigint> = {};
-  const lowerBounds: Record<string, Buffer> = {};
-  const upperBounds: Record<string, Buffer> = {};
-
-  for (const rg of rowGroups) {
-    for (const column of rg.columns) {
-      const fieldName = column.meta_data?.path_in_schema?.[0];
-      if (fieldName && column.meta_data) {
-        const compressedSize = column.meta_data.total_compressed_size;
-        if (compressedSize !== null && compressedSize !== undefined) {
-          columnSizes[fieldName] =
-            (columnSizes[fieldName] ?? 0n) + BigInt(compressedSize);
-        }
-
-        const numValues = column.meta_data.num_values;
-        if (numValues !== null && numValues !== undefined) {
-          valueCounts[fieldName] =
-            (valueCounts[fieldName] ?? 0n) + BigInt(numValues);
-        }
-
-        const stats = column.meta_data.statistics;
-        if (stats) {
-          const nullCount = stats.null_count;
-          if (nullCount !== null && nullCount !== undefined) {
-            nullValueCounts[fieldName] =
-              (nullValueCounts[fieldName] ?? 0n) + BigInt(nullCount);
-          }
-
-          const field = schema.fields.find((f) => f.name === fieldName);
-          const fieldType =
-            field && typeof field.type === 'string' ? field.type : null;
-
-          if (stats.min_value) {
-            const minBuf = _encodeStatValue(stats.min_value, fieldType);
-            if (
-              minBuf &&
-              (!lowerBounds[fieldName] ||
-                Buffer.compare(minBuf, lowerBounds[fieldName]) < 0)
-            ) {
-              lowerBounds[fieldName] = minBuf;
-            }
-          }
-
-          if (stats.max_value) {
-            const maxBuf = _encodeStatValue(stats.max_value, fieldType);
-            if (
-              maxBuf &&
-              (!upperBounds[fieldName] ||
-                Buffer.compare(maxBuf, upperBounds[fieldName]) > 0)
-            ) {
-              upperBounds[fieldName] = maxBuf;
-            }
-          }
-        }
-      }
-    }
-  }
-
-  return {
-    columnSizes: Object.keys(columnSizes).length > 0 ? columnSizes : null,
-    valueCounts: Object.keys(valueCounts).length > 0 ? valueCounts : null,
-    nullValueCounts:
-      Object.keys(nullValueCounts).length > 0 ? nullValueCounts : null,
-    lowerBounds: Object.keys(lowerBounds).length > 0 ? lowerBounds : null,
-    upperBounds: Object.keys(upperBounds).length > 0 ? upperBounds : null,
-  };
-}
-
-function _encodeStatValue(
-  value: Buffer | string,
-  _fieldType: string | null
-): Buffer | null {
-  if (Buffer.isBuffer(value)) {
-    return value;
-  }
-  if (typeof value === 'string') {
-    return Buffer.from(value, 'utf8');
-  }
-  return null;
 }
 
 function _createJsonLineTransform(schema: IcebergSchema): Transform {
