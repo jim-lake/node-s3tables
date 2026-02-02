@@ -31,9 +31,13 @@ export interface ImportRedshiftManifestParams {
   rewriteParquet?: boolean;
 }
 
+export interface ImportRedshiftManifestResult extends AddDataFilesResult {
+  files: { url: string; records: bigint; fileSize: bigint }[];
+}
+
 export async function importRedshiftManifest(
   params: ImportRedshiftManifestParams
-): Promise<AddDataFilesResult> {
+): Promise<ImportRedshiftManifestResult> {
   const { credentials } = params;
   const region = params.tableBucketARN.split(':')[3];
   if (!region) {
@@ -54,8 +58,7 @@ export async function importRedshiftManifest(
 
   const import_prefix = `data/${randomUUID()}/`;
   const lists: AddFileList[] = [];
-  const BATCH_SIZE = 10;
-  let lastResult: AddDataFilesResult | null = null;
+  const fileList: { url: string; records: bigint; fileSize: bigint }[] = [];
 
   for (const entry of manifest.entries) {
     const { url } = entry;
@@ -95,36 +98,23 @@ export async function importRedshiftManifest(
       partitions,
     });
     list.files.push({ file: s3Url, partitions, ...stats });
-
-    if (lists.reduce((sum, l) => sum + l.files.length, 0) >= BATCH_SIZE) {
-      lastResult = await addDataFiles({
-        credentials,
-        tableBucketARN: params.tableBucketARN,
-        namespace: params.namespace,
-        name: params.name,
-        lists,
-        retryCount: params.retryCount,
-      });
-      lists.length = 0;
-    }
-  }
-
-  if (lists.length > 0 && lists.some((l) => l.files.length > 0)) {
-    lastResult = await addDataFiles({
-      credentials,
-      tableBucketARN: params.tableBucketARN,
-      namespace: params.namespace,
-      name: params.name,
-      lists,
-      retryCount: params.retryCount,
+    fileList.push({
+      url: s3Url,
+      records: stats.recordCount,
+      fileSize: stats.fileSize,
     });
   }
 
-  if (!lastResult) {
-    throw new Error('No files were processed');
-  }
+  const result = await addDataFiles({
+    credentials,
+    tableBucketARN: params.tableBucketARN,
+    namespace: params.namespace,
+    name: params.name,
+    lists,
+    retryCount: params.retryCount,
+  });
 
-  return lastResult;
+  return { ...result, files: fileList };
 }
 
 interface RedshiftManifest {

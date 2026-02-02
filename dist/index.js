@@ -1961,8 +1961,7 @@ async function importRedshiftManifest(params) {
     }
     const import_prefix = `data/${node_crypto.randomUUID()}/`;
     const lists = [];
-    const BATCH_SIZE = 10;
-    let lastResult = null;
+    const fileList = [];
     for (const entry of manifest.entries) {
         const { url } = entry;
         const file = url.split('/').pop()?.replace('.json.zst', '.parquet') ?? '';
@@ -1994,32 +1993,17 @@ async function importRedshiftManifest(params) {
             url,
             schema});
         list.files.push({ file: s3Url, partitions, ...stats });
-        if (lists.reduce((sum, l) => sum + l.files.length, 0) >= BATCH_SIZE) {
-            lastResult = await addDataFiles({
-                credentials,
-                tableBucketARN: params.tableBucketARN,
-                namespace: params.namespace,
-                name: params.name,
-                lists,
-                retryCount: params.retryCount,
-            });
-            lists.length = 0;
-        }
+        fileList.push({ url: s3Url, records: stats.recordCount, fileSize: stats.fileSize });
     }
-    if (lists.length > 0 && lists.some((l) => l.files.length > 0)) {
-        lastResult = await addDataFiles({
-            credentials,
-            tableBucketARN: params.tableBucketARN,
-            namespace: params.namespace,
-            name: params.name,
-            lists,
-            retryCount: params.retryCount,
-        });
-    }
-    if (!lastResult) {
-        throw new Error('No files were processed');
-    }
-    return lastResult;
+    const result = await addDataFiles({
+        credentials,
+        tableBucketARN: params.tableBucketARN,
+        namespace: params.namespace,
+        name: params.name,
+        lists,
+        retryCount: params.retryCount,
+    });
+    return { ...result, files: fileList };
 }
 async function _downloadRedshift(params) {
     const s3_client = getS3Client(params);

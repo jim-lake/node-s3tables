@@ -167,7 +167,14 @@ interface ImportRedshiftManifestParams {
     retryCount?: number | undefined;
     rewriteParquet?: boolean;
 }
-declare function importRedshiftManifest(params: ImportRedshiftManifestParams): Promise<AddDataFilesResult>;
+interface ImportRedshiftManifestResult extends AddDataFilesResult {
+    files: {
+        url: string;
+        records: bigint;
+        fileSize: bigint;
+    }[];
+}
+declare function importRedshiftManifest(params: ImportRedshiftManifestParams): Promise<ImportRedshiftManifestResult>;
 
 type TableLocation = {
     tableArn: string;
@@ -303,4 +310,4 @@ declare const _default: {
 };
 
 export { IcebergHttpError, ManifestListSchema, addDataFiles, addManifest, addPartitionSpec, addSchema, _default as default, downloadAvro, getMetadata, importRedshiftManifest, manifestCompact, maxBuffer, minBuffer, parseS3Url, removeSnapshots, setCurrentCommit, submitSnapshot };
-export type { AddDataFilesParams, AddDataFilesResult, AddFile, AddFileList, AddManifestParams, AddPartitionSpecParams, AddSchemaParams, CalculateWeightFunction, GetMetadataParams, IcebergComplexType, IcebergMetadata, IcebergPartitionField, IcebergPartitionSpec, IcebergPrimitiveType, IcebergSchema, IcebergSchemaField, IcebergSnapshot, IcebergSnapshotSummary, IcebergTransform, IcebergType, IcebergUpdateResponse, ImportRedshiftManifestParams, ManifestCompactParams, ManifestCompactResult, ManifestListRecord, RemoveSnapshotsParams, ResolveConflictResult, SetCurrentCommitParams, SubmitSnapshotParams, SubmitSnapshotResult, TableLocation };
+export type { AddDataFilesParams, AddDataFilesResult, AddFile, AddFileList, AddManifestParams, AddPartitionSpecParams, AddSchemaParams, CalculateWeightFunction, GetMetadataParams, IcebergComplexType, IcebergMetadata, IcebergPartitionField, IcebergPartitionSpec, IcebergPrimitiveType, IcebergSchema, IcebergSchemaField, IcebergSnapshot, IcebergSnapshotSummary, IcebergTransform, IcebergType, IcebergUpdateResponse, ImportRedshiftManifestParams, ImportRedshiftManifestResult, ManifestCompactParams, ManifestCompactResult, ManifestListRecord, RemoveSnapshotsParams, ResolveConflictResult, SetCurrentCommitParams, SubmitSnapshotParams, SubmitSnapshotResult, TableLocation };
