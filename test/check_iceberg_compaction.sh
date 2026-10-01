@@ -8,6 +8,15 @@ fi
 
 BUCKET_ARN="$1"
 
+# The ARN always contains the region in field 4:
+# arn:aws:s3tables:<region>:<account>:bucket/<name>
+REGION="$(cut -d: -f4 <<< "$BUCKET_ARN")"
+if [[ -z "$REGION" ]]; then
+  echo "error: could not parse region from ARN: $BUCKET_ARN" >&2
+  exit 1
+fi
+export AWS_DEFAULT_REGION="$REGION"
+
 aws s3tables list-namespaces \
   --table-bucket-arn "$BUCKET_ARN" \
   --output json |
