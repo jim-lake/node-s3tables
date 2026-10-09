@@ -36,8 +36,12 @@ void test('conflict test', async (t) => {
       schemaId: 1,
       fields: [
         { id: 1, name: 'id', type: 'int' as const, required: true },
-        { id: 2, name: 'name', type: 'string' as const, required: true },
-        { id: 3, name: 'category', type: 'string' as const, required: true },
+        /*
+         * Newly added columns must be optional: Iceberg forbids adding a
+         * required column to an existing table (existing rows would be null).
+         */
+        { id: 2, name: 'name', type: 'string' as const, required: false },
+        { id: 3, name: 'category', type: 'string' as const, required: false },
       ],
     });
   });

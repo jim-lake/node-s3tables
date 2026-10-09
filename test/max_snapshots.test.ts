@@ -33,7 +33,11 @@ void test('maxSnapshots test', async (t) => {
           id: 2,
           name: 'event_datetime',
           type: 'timestamp' as const,
-          required: true,
+          /*
+           * Newly added columns must be optional: Iceberg forbids adding a
+           * required column to an existing table (existing rows would be null).
+           */
+          required: false,
         },
       ],
     });

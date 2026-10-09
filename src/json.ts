@@ -2,12 +2,7 @@ import * as LosslessJson from 'lossless-json';
 export { stringify } from 'lossless-json';
 
 export type JSONPrimitive =
-  | string
-  | number
-  | boolean
-  | null
-  | bigint
-  | undefined;
+  string | number | boolean | null | bigint | undefined;
 export type JSONValue = JSONPrimitive | JSONObject | JSONArray;
 export interface JSONObject {
   [key: string]: JSONValue;

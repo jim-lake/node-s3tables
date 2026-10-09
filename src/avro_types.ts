@@ -163,5 +163,4 @@ export const AvroLogicalTypes = {
 };
 export type AvroLogicalType = keyof typeof AvroLogicalTypes;
 export type AvroType =
-  | AvroPrimitiveType
-  | { type: AvroPrimitiveType; logicalType: AvroLogicalType };
+  AvroPrimitiveType | { type: AvroPrimitiveType; logicalType: AvroLogicalType };

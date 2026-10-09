@@ -105,11 +105,7 @@ void test('makeBounds - comprehensive transform/type combinations', async (t) =>
 
         const partitions: PartitionRecord = {
           partition_field: inputValue as
-            | string
-            | number
-            | bigint
-            | Buffer
-            | null,
+            string | number | bigint | Buffer | null,
         };
 
         const result = makeBounds(partitions, spec, schema);

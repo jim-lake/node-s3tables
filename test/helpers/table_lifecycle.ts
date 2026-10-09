@@ -65,13 +65,31 @@ export async function setupTable(
   );
   log('Namespace created:', namespace, namespace_result);
 
-  // Add lake formation tag
-  const command = new AddLFTagsToResourceCommand({
-    Resource: { Database: { CatalogId: config.catalogId, Name: namespace } },
-    LFTags: [{ TagKey: 'AccessLevel', TagValues: ['Public'] }],
-  });
-  const response = await clients.lakeFormation.send(command);
-  log('add tag response:', response);
+  /*
+   * Add lake formation tag.
+   * This grants Athena query permissions via the `AccessLevel: Public` LF-tag.
+   * It requires the caller to be a Lake Formation admin and for the LF-tag to
+   * exist. When the namespace already inherits IAM_ALLOWED_PRINCIPALS -> ALL
+   * (the Lake Formation default), the tag is not required for queries to work,
+   * so a missing LF-tag or insufficient LF permissions is tolerated here.
+   * Set SKIP_LF_TAG=1 to skip this step entirely.
+   */
+  if (process.env['SKIP_LF_TAG']) {
+    log('add LF tag skipped: SKIP_LF_TAG set');
+  } else {
+    try {
+      const command = new AddLFTagsToResourceCommand({
+        Resource: {
+          Database: { CatalogId: config.catalogId, Name: namespace },
+        },
+        LFTags: [{ TagKey: 'AccessLevel', TagValues: ['Public'] }],
+      });
+      const response = await clients.lakeFormation.send(command);
+      log('add tag response:', response);
+    } catch (error) {
+      log('add LF tag skipped (non-fatal):', (error as Error).message);
+    }
+  }
 
   // Create table
   const table_result = await clients.s3Tables.send(
