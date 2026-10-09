@@ -145,8 +145,7 @@ Creates a manifest file for data files and returns a manifest list record.
 
 **Parameters:**
 
-- `params.credentials` (AwsCredentialIdentity, optional) - AWS credentials
-- `params.region` (string) - AWS region
+- `params.config` (AwsConfig) - Resolved AWS configuration (see [AWS configuration](#aws-configuration)). Build one with `resolveAwsConfig({ region, credentials, s3ClientConfig, s3TablesClientConfig })`.
 - `params.metadata` (IcebergMetadata) - Table metadata
 - `params.schemaId` (number) - Schema ID to use
 - `params.specId` (number) - Partition spec ID to use
@@ -157,8 +156,10 @@ Creates a manifest file for data files and returns a manifest list record.
 **Returns:** Promise<ManifestListRecord>
 
 ```javascript
+import { addManifest, resolveAwsConfig } from 'node-s3tables';
+
 const manifestRecord = await addManifest({
-  region: 'us-west-2',
+  config: resolveAwsConfig({ region: 'us-west-2' }),
   metadata: tableMetadata,
   schemaId: 2,
   specId: 1,
@@ -444,6 +445,56 @@ The library uses the AWS SDK for authentication. Configure credentials using:
 - AWS credentials file (`~/.aws/credentials`)
 - IAM roles (when running on EC2/Lambda)
 - Or pass credentials directly to functions
+
+### AWS configuration
+
+Every public API accepts the following optional AWS configuration fields. The
+`s3ClientConfig` and `s3TablesClientConfig` objects are spread directly into the
+corresponding AWS SDK v3 client constructors (`S3Client` and `S3TablesClient`),
+so any constructor option is supported.
+
+- `region` (string) - Shortcut applied to both service client configs.
+- `credentials` (AwsCredentialIdentity) - Shortcut applied to both service client configs.
+- `s3ClientConfig` (S3ClientConfig) - Passed to the `@aws-sdk/client-s3` `S3Client` constructor.
+- `s3TablesClientConfig` (S3TablesClientConfig) - Passed to the `@aws-sdk/client-s3tables` `S3TablesClient` constructor.
+
+Values set inside `s3ClientConfig` / `s3TablesClientConfig` take precedence over
+the `region` / `credentials` shortcuts.
+
+#### IPv6 / dual-stack (public-only) environments
+
+The library always talks to the S3 Tables Iceberg REST API over the dual-stack
+hostname `s3tables.<region>.api.aws`, which resolves to IPv4 or IPv6 depending
+on the network — no configuration is needed for the Tables endpoint.
+
+The underlying S3 data-plane client (used for reading/writing manifest and data
+objects) is separate, so to go fully IPv6 enable dual-stack on it as well:
+
+```javascript
+await addDataFiles({
+  tableBucketARN: 'arn:aws:s3tables:us-west-2:123456789012:bucket/my-bucket',
+  namespace: 'sales',
+  name: 'daily_sales',
+  // Enable IPv6 / dual-stack on the S3 data-plane client:
+  s3ClientConfig: { useDualstackEndpoint: true },
+  lists: [/* ... */],
+});
+```
+
+For helpers that take a pre-resolved config (`addManifest`, `downloadAvro`,
+`getS3Client`, `getS3TablesClient`), build one with `resolveAwsConfig`:
+
+```javascript
+import { resolveAwsConfig, getS3TablesClient } from 'node-s3tables';
+
+const config = resolveAwsConfig({
+  region: 'us-west-2',
+  s3ClientConfig: { useDualstackEndpoint: true },
+  s3TablesClientConfig: { useDualstackEndpoint: true },
+});
+
+const tablesClient = getS3TablesClient(config);
+```
 
 ## Testing
 

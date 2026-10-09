@@ -10,8 +10,16 @@ import {
 import { IcebergHttpError } from './request';
 import { setCurrentCommit } from './snapshot';
 
-export { IcebergHttpError } from './request';
-export { parseS3Url, downloadAvro } from './s3_tools';
+export { IcebergHttpError, resolveS3TablesHost } from './request';
+export {
+  parseS3Url,
+  downloadAvro,
+  getS3Client,
+  getS3TablesClient,
+} from './s3_tools';
+export { resolveAwsConfig } from './config';
+export type { AwsConfig, AwsConfigParams } from './config';
+export type { S3ClientConfig, S3TablesClientConfig } from './config';
 export { ManifestListSchema } from './avro_schema';
 
 export * from './add_data_files';

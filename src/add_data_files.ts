@@ -1,12 +1,13 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { avroToBuffer } from './avro_helper';
 import { ManifestListType } from './avro_schema';
+import { resolveAwsConfig } from './config';
 import { addManifest } from './manifest';
-import { getMetadata } from './metadata';
+import { getMetadataWithConfig } from './metadata';
 import { parseS3Url, writeS3File, updateManifestList } from './s3_tools';
 import { submitSnapshot } from './snapshot';
 
-import type { AwsCredentialIdentity } from '@aws-sdk/types';
+import type { AwsConfigParams } from './config';
 import type { AddFile } from './manifest';
 import type { IcebergSnapshot } from './iceberg';
 import type { JSONObject } from './json';
@@ -18,8 +19,7 @@ export interface AddFileList {
   schemaId: number;
   files: AddFile[];
 }
-export interface AddDataFilesParams {
-  credentials?: AwsCredentialIdentity | undefined;
+export interface AddDataFilesParams extends AwsConfigParams {
   tableBucketARN: string;
   namespace: string;
   name: string;
@@ -38,13 +38,20 @@ export interface AddDataFilesResult {
 export async function addDataFiles(
   params: AddDataFilesParams
 ): Promise<AddDataFilesResult> {
-  const { credentials } = params;
+  const config = resolveAwsConfig(params);
   const region = params.tableBucketARN.split(':')[3];
   if (!region) {
     throw new Error('bad tableBucketARN');
   }
   const snapshot_id = params.snapshotId ?? _randomBigInt64();
-  const metadata = await getMetadata(params);
+  const metadata = await getMetadataWithConfig(
+    {
+      tableBucketARN: params.tableBucketARN,
+      namespace: params.namespace,
+      name: params.name,
+    },
+    config
+  );
   const bucket = metadata.location.split('/').slice(-1)[0];
   if (!bucket) {
     throw new Error('bad manifest location');
@@ -85,8 +92,7 @@ export async function addDataFiles(
         added_size += file.fileSize;
       }
       const opts = {
-        credentials,
-        region,
+        config,
         metadata,
         schemaId: list.schemaId,
         specId: list.specId,
@@ -109,8 +115,7 @@ export async function addDataFiles(
     const url = `s3://${bucket}/${manifest_list_key}`;
     if (old_list_key) {
       await updateManifestList({
-        credentials,
-        region,
+        config,
         bucket,
         key: old_list_key,
         outKey: manifest_list_key,
@@ -132,8 +137,7 @@ export async function addDataFiles(
         records,
       });
       await writeS3File({
-        credentials,
-        region,
+        config,
         bucket,
         key: manifest_list_key,
         body: manifest_list_buf,
@@ -176,7 +180,7 @@ export async function addDataFiles(
   }
 
   return submitSnapshot({
-    credentials,
+    config,
     tableBucketARN: params.tableBucketARN,
     namespace: params.namespace,
     name: params.name,

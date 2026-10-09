@@ -8,12 +8,13 @@ import {
   makeManifestType,
 } from './avro_schema';
 import { ListContent } from './avro_types';
+import { resolveAwsConfig } from './config';
 import { minBuffer, maxBuffer } from './manifest';
-import { getMetadata } from './metadata';
+import { getMetadataWithConfig } from './metadata';
 import { parseS3Url, downloadAvro, streamWriteAvro } from './s3_tools';
 import { submitSnapshot } from './snapshot';
 
-import type { AwsCredentialIdentity } from '@aws-sdk/types';
+import type { AwsConfig, AwsConfigParams } from './config';
 import type { Schema } from 'avsc';
 import type { IcebergPartitionSpec, IcebergSchema } from './iceberg';
 import type { ManifestListRecord, ManifestFileRecord } from './avro_types';
@@ -21,8 +22,7 @@ import type { SubmitSnapshotResult } from './snapshot';
 
 export type CalculateWeightFunction = (group: ManifestListRecord[]) => number;
 
-export interface ManifestCompactParams {
-  credentials?: AwsCredentialIdentity;
+export interface ManifestCompactParams extends AwsConfigParams {
   tableBucketARN: string;
   namespace: string;
   name: string;
@@ -44,13 +44,21 @@ const ITER_LIMIT = 10;
 export async function manifestCompact(
   params: ManifestCompactParams
 ): Promise<ManifestCompactResult> {
-  const { credentials, targetCount, calculateWeight } = params;
+  const { targetCount, calculateWeight } = params;
+  const config = resolveAwsConfig(params);
   const region = params.tableBucketARN.split(':')[3];
   if (!region) {
     throw new Error('bad tableBucketARN');
   }
   const snapshot_id = params.snapshotId ?? _randomBigInt64();
-  const metadata = await getMetadata(params);
+  const metadata = await getMetadataWithConfig(
+    {
+      tableBucketARN: params.tableBucketARN,
+      namespace: params.namespace,
+      name: params.name,
+    },
+    config
+  );
   const bucket = metadata.location.split('/').slice(-1)[0];
   const parent_snapshot_id = BigInt(metadata['current-snapshot-id']);
   const snapshot =
@@ -93,8 +101,7 @@ export async function manifestCompact(
   }
 
   const list = await downloadAvro<ManifestListRecord>({
-    credentials,
-    region,
+    config,
     bucket,
     key: old_list_key,
     avroSchema: ManifestListSchema,
@@ -164,8 +171,7 @@ export async function manifestCompact(
       throw new Error(`Partition spec not found: ${partition_spec_id}`);
     }
     return _combineGroup({
-      credentials,
-      region,
+      config,
       bucket,
       group,
       spec,
@@ -176,8 +182,7 @@ export async function manifestCompact(
     });
   });
   await streamWriteAvro<ManifestListRecord>({
-    credentials,
-    region,
+    config,
     bucket,
     key: manifest_list_key,
     metadata: {
@@ -199,7 +204,7 @@ export async function manifestCompact(
     'changed-partition-count': '0',
   };
   const snap_result = await submitSnapshot({
-    credentials,
+    config,
     tableBucketARN: params.tableBucketARN,
     namespace: params.namespace,
     name: params.name,
@@ -220,8 +225,7 @@ export async function manifestCompact(
   };
 }
 interface CombineGroupParams {
-  credentials?: AwsCredentialIdentity | undefined;
-  region: string;
+  config: AwsConfig;
   bucket: string;
   snapshotId: bigint;
   sequenceNumber: bigint;
@@ -233,7 +237,7 @@ interface CombineGroupParams {
 async function _combineGroup(
   params: CombineGroupParams
 ): Promise<ManifestListRecord[]> {
-  const { credentials, region, bucket, group, spec } = params;
+  const { config, bucket, group, spec } = params;
   const record0 = group[0];
   if ((group.length === 1 && !params.forceRewrite) || !record0) {
     return group;
@@ -244,16 +248,14 @@ async function _combineGroup(
   const type = makeManifestType(spec, params.schemas, true);
   const iter = asyncIterMap(group, ITER_LIMIT, async (record) => {
     return _streamReadManifest({
-      credentials,
-      region,
+      config,
       bucket,
       url: record.manifest_path,
       schema,
     });
   });
   const manifest_length = await streamWriteAvro<ManifestFileRecord>({
-    credentials,
-    region,
+    config,
     bucket,
     key,
     metadata: {
@@ -326,8 +328,7 @@ async function _combineGroup(
   return [ret];
 }
 interface StreamReadManifestParams {
-  credentials?: AwsCredentialIdentity | undefined;
-  region: string;
+  config: AwsConfig;
   bucket: string;
   url: string;
   schema: Schema;
@@ -346,8 +347,7 @@ async function _streamReadManifest(
     throw new Error(`invalid manfiest url: ${params.url}`);
   }
   const results = await downloadAvro<ManifestFileRecord>({
-    credentials: params.credentials,
-    region: params.region,
+    config: params.config,
     bucket,
     key,
     avroSchema: params.schema,

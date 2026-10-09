@@ -6,7 +6,7 @@ import { defaultProvider } from '@aws-sdk/credential-provider-node';
 import { parse, stringify } from './json';
 
 import type { JSONObject, JSONValue } from './json';
-import type { AwsCredentialIdentity } from '@aws-sdk/types';
+import type { AwsConfig, S3TablesClientConfig } from './config';
 
 export default { icebergRequest };
 
@@ -24,13 +24,39 @@ export class IcebergHttpError extends Error {
     }
   }
 }
+
 interface GetParams {
-  credentials?: AwsCredentialIdentity | undefined;
+  config: AwsConfig;
   tableBucketARN: string;
   method?: string;
   suffix: string;
   body?: unknown;
 }
+
+/**
+ * Resolve the hostname for the S3 Tables Iceberg REST endpoint.
+ *
+ * Always uses the dual-stack endpoint `s3tables.{region}.api.aws`, which
+ * resolves to IPv4 or IPv6 depending on the network, so it works everywhere
+ * the legacy `amazonaws.com` endpoint did while also supporting IPv6-only /
+ * public-dual-stack environments. An explicit `endpoint` in
+ * `s3TablesClientConfig` overrides it.
+ */
+export function resolveS3TablesHost(
+  region: string,
+  s3TablesClientConfig?: S3TablesClientConfig
+): string {
+  const endpoint = s3TablesClientConfig?.endpoint;
+  if (typeof endpoint === 'string' && endpoint) {
+    if (endpoint.includes('://')) {
+      return new URL(endpoint).host;
+    }
+    // Bare host (optionally with port/path); keep only the authority portion.
+    return endpoint.split('/')[0] ?? endpoint;
+  }
+  return `s3tables.${region}.api.aws`;
+}
+
 export async function icebergRequest<T = JSONObject>(
   params: GetParams
 ): Promise<T> {
@@ -38,8 +64,9 @@ export async function icebergRequest<T = JSONObject>(
   if (!region) {
     throw new Error('bad tableBucketARN');
   }
+  const { s3TablesClientConfig } = params.config;
   const arn = encodeURIComponent(params.tableBucketARN);
-  const hostname = `s3tables.${region}.amazonaws.com`;
+  const hostname = resolveS3TablesHost(region, s3TablesClientConfig);
   const full_path = `/iceberg/v1/${arn}${params.suffix}`;
 
   const body = params.body ? stringify(params.body) : null;
@@ -58,7 +85,7 @@ export async function icebergRequest<T = JSONObject>(
 
   const request = new HttpRequest(req_opts);
   const signer = new SignatureV4({
-    credentials: params.credentials ?? defaultProvider(),
+    credentials: s3TablesClientConfig.credentials ?? defaultProvider(),
     region,
     service: 's3tables',
     sha256: Sha256,

@@ -13,6 +13,7 @@ import {
   parseS3Url,
 } from '../src';
 import { ManifestListSchema, makeManifestSchema } from '../src/avro_schema';
+import { resolveAwsConfig } from '../src/config';
 import { PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -223,7 +224,7 @@ void test('redshift import with rewriteParquet test', async (t) => {
     assert(region, 'Region not found in tableBucketARN');
 
     const manifestList = await downloadAvro<ManifestListRecord>({
-      region,
+      config: resolveAwsConfig({ region }),
       bucket: manifestListBucket,
       key: manifestListKey,
       avroSchema: ManifestListSchema,
@@ -245,7 +246,7 @@ void test('redshift import with rewriteParquet test', async (t) => {
     const manifestFileSchema = makeManifestSchema(spec, metadata.schemas);
 
     const manifestFiles = await downloadAvro<ManifestFileRecord>({
-      region,
+      config: resolveAwsConfig({ region }),
       bucket: manifestBucket,
       key: manifestKey,
       avroSchema: manifestFileSchema,
@@ -328,7 +329,7 @@ void test('redshift import with rewriteParquet test', async (t) => {
     assert(region, 'Region not found in tableBucketARN');
 
     const manifestList = await downloadAvro<ManifestListRecord>({
-      region,
+      config: resolveAwsConfig({ region }),
       bucket: manifestListBucket,
       key: manifestListKey,
       avroSchema: ManifestListSchema,
@@ -349,7 +350,7 @@ void test('redshift import with rewriteParquet test', async (t) => {
     const manifestFileSchema = makeManifestSchema(spec, metadata.schemas);
 
     const manifestFiles = await downloadAvro<ManifestFileRecord>({
-      region,
+      config: resolveAwsConfig({ region }),
       bucket: manifestBucket,
       key: manifestKey,
       avroSchema: manifestFileSchema,

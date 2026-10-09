@@ -9,6 +9,7 @@ import { setupTable } from './helpers/table_lifecycle';
 import { createPartitionedParquetFile } from './helpers/parquet_helper';
 import { getMetadata, addPartitionSpec, addDataFiles } from '../src';
 import { getS3Client, parseS3Url } from '../src/s3_tools';
+import { resolveAwsConfig } from '../src/config';
 import { ManifestListType } from '../src/avro_schema';
 import type { ManifestListRecord } from '../src/avro_types';
 
@@ -111,7 +112,7 @@ void test('date partition bounds test', async (t) => {
     const { bucket, key } = parseS3Url(manifestListPath);
 
     assert(config.region, 'No region configured');
-    const s3Client = getS3Client({ region: config.region });
+    const s3Client = getS3Client(resolveAwsConfig({ region: config.region }));
     const cmd = new GetObjectCommand({ Bucket: bucket, Key: key });
     const response = await s3Client.send(cmd);
     const body = await response.Body?.transformToByteArray();

@@ -1,6 +1,44 @@
+import { S3ClientConfig, S3Client } from '@aws-sdk/client-s3';
+export { S3ClientConfig } from '@aws-sdk/client-s3';
+import { S3TablesClientConfig, S3TablesClient } from '@aws-sdk/client-s3tables';
+export { S3TablesClientConfig } from '@aws-sdk/client-s3tables';
 import { AwsCredentialIdentity } from '@aws-sdk/types';
 import * as avsc from 'avsc';
 import { Schema } from 'avsc';
+
+/**
+ * User-facing AWS configuration accepted by every public API in this library.
+ *
+ * `region` and `credentials` are convenient top-level shortcuts applied to both
+ * service configs. `s3ClientConfig` and `s3TablesClientConfig` are spread
+ * directly into the corresponding AWS SDK client constructors, so any
+ * constructor option is supported (for example `useDualstackEndpoint: true` for
+ * IPv6 / public-dual-stack environments, or a custom `endpoint`).
+ */
+interface AwsConfigParams {
+    region?: string | undefined;
+    credentials?: AwsCredentialIdentity | undefined;
+    s3ClientConfig?: S3ClientConfig | undefined;
+    s3TablesClientConfig?: S3TablesClientConfig | undefined;
+}
+/**
+ * Normalized configuration carried internally. Both service config objects
+ * always exist (possibly empty) so downstream code can spread them into SDK
+ * constructors without null checks. This single object is passed by reference
+ * through every internal function; it is never destructured and reassembled.
+ */
+interface AwsConfig {
+    region?: string | undefined;
+    s3ClientConfig: S3ClientConfig;
+    s3TablesClientConfig: S3TablesClientConfig;
+}
+/**
+ * Resolve the user-facing shortcuts into a single {@link AwsConfig}. Explicit
+ * values inside `s3ClientConfig` / `s3TablesClientConfig` always win over the
+ * `region` / `credentials` shortcuts. Call this once at a public entry point;
+ * pass the result around unchanged.
+ */
+declare function resolveAwsConfig(params: AwsConfigParams): AwsConfig;
 
 type RawValue = string | number | bigint | Buffer | null;
 type PartitionRecord = Record<string, RawValue>;
@@ -112,8 +150,7 @@ interface AddFile {
     sortOrderId?: number | null | undefined;
 }
 interface AddManifestParams {
-    credentials?: AwsCredentialIdentity | undefined;
-    region: string;
+    config: AwsConfig;
     metadata: IcebergMetadata;
     schemaId: number;
     specId: number;
@@ -137,8 +174,7 @@ interface AddFileList {
     schemaId: number;
     files: AddFile[];
 }
-interface AddDataFilesParams {
-    credentials?: AwsCredentialIdentity | undefined;
+interface AddDataFilesParams extends AwsConfigParams {
     tableBucketARN: string;
     namespace: string;
     name: string;
@@ -156,8 +192,7 @@ interface AddDataFilesResult {
 }
 declare function addDataFiles(params: AddDataFilesParams): Promise<AddDataFilesResult>;
 
-interface ImportRedshiftManifestParams {
-    credentials?: AwsCredentialIdentity;
+interface ImportRedshiftManifestParams extends AwsConfigParams {
     tableBucketARN: string;
     namespace: string;
     name: string;
@@ -183,13 +218,15 @@ type TableLocation = {
     namespace: string;
     name: string;
 };
-type GetMetadataParams = TableLocation & {
-    region?: string;
-    credentials?: AwsCredentialIdentity | undefined;
-};
+type GetMetadataParams = TableLocation & AwsConfigParams;
 declare function getMetadata(params: GetMetadataParams): Promise<IcebergMetadata>;
-interface AddSchemaParams {
-    credentials?: AwsCredentialIdentity;
+/**
+ * Internal variant of {@link getMetadata} that takes an already-resolved
+ * {@link AwsConfig}. Used by other operations so the config resolved at the
+ * public entry point flows through unchanged.
+ */
+declare function getMetadataWithConfig(location: TableLocation, config: AwsConfig): Promise<IcebergMetadata>;
+interface AddSchemaParams extends AwsConfigParams {
     tableBucketARN: string;
     namespace: string;
     name: string;
@@ -201,8 +238,7 @@ interface IcebergUpdateResponse {
     'metadata-location': string;
 }
 declare function addSchema(params: AddSchemaParams): Promise<IcebergUpdateResponse>;
-interface AddPartitionSpecParams {
-    credentials?: AwsCredentialIdentity;
+interface AddPartitionSpecParams extends AwsConfigParams {
     tableBucketARN: string;
     namespace: string;
     name: string;
@@ -210,8 +246,7 @@ interface AddPartitionSpecParams {
     fields: IcebergPartitionField[];
 }
 declare function addPartitionSpec(params: AddPartitionSpecParams): Promise<IcebergUpdateResponse>;
-interface RemoveSnapshotsParams {
-    credentials?: AwsCredentialIdentity;
+interface RemoveSnapshotsParams extends AwsConfigParams {
     tableBucketARN: string;
     namespace: string;
     name: string;
@@ -225,9 +260,19 @@ declare class IcebergHttpError extends Error {
     body?: JSONObject;
     constructor(status: number, body: JSONValue, message: string);
 }
+/**
+ * Resolve the hostname for the S3 Tables Iceberg REST endpoint.
+ *
+ * Always uses the dual-stack endpoint `s3tables.{region}.api.aws`, which
+ * resolves to IPv4 or IPv6 depending on the network, so it works everywhere
+ * the legacy `amazonaws.com` endpoint did while also supporting IPv6-only /
+ * public-dual-stack environments. An explicit `endpoint` in
+ * `s3TablesClientConfig` overrides it.
+ */
+declare function resolveS3TablesHost(region: string, s3TablesClientConfig?: S3TablesClientConfig): string;
 
 interface SubmitSnapshotParams {
-    credentials?: AwsCredentialIdentity | undefined;
+    config: AwsConfig;
     tableBucketARN: string;
     namespace: string;
     name: string;
@@ -253,8 +298,7 @@ interface SubmitSnapshotResult {
     sequenceNumber: bigint;
 }
 declare function submitSnapshot(params: SubmitSnapshotParams): Promise<SubmitSnapshotResult>;
-interface SetCurrentCommitParams {
-    credentials?: AwsCredentialIdentity;
+interface SetCurrentCommitParams extends AwsConfigParams {
     tableBucketARN: string;
     namespace: string;
     name: string;
@@ -266,9 +310,10 @@ declare function parseS3Url(url: string): {
     bucket: string;
     key: string;
 };
+declare function getS3Client(config: AwsConfig): S3Client;
+declare function getS3TablesClient(config: AwsConfig): S3TablesClient;
 interface DownloadAvroParams {
-    credentials?: AwsCredentialIdentity | undefined;
-    region: string;
+    config: AwsConfig;
     bucket: string;
     key: string;
     avroSchema: Schema;
@@ -278,8 +323,7 @@ declare function downloadAvro<T>(params: DownloadAvroParams): Promise<T[]>;
 declare const ManifestListSchema: avsc.Schema;
 
 type CalculateWeightFunction = (group: ManifestListRecord[]) => number;
-interface ManifestCompactParams {
-    credentials?: AwsCredentialIdentity;
+interface ManifestCompactParams extends AwsConfigParams {
     tableBucketARN: string;
     namespace: string;
     name: string;
@@ -309,5 +353,5 @@ declare const _default: {
     setCurrentCommit: typeof setCurrentCommit;
 };
 
-export { IcebergHttpError, ManifestListSchema, addDataFiles, addManifest, addPartitionSpec, addSchema, _default as default, downloadAvro, getMetadata, importRedshiftManifest, manifestCompact, maxBuffer, minBuffer, parseS3Url, removeSnapshots, setCurrentCommit, submitSnapshot };
-export type { AddDataFilesParams, AddDataFilesResult, AddFile, AddFileList, AddManifestParams, AddPartitionSpecParams, AddSchemaParams, CalculateWeightFunction, GetMetadataParams, IcebergComplexType, IcebergMetadata, IcebergPartitionField, IcebergPartitionSpec, IcebergPrimitiveType, IcebergSchema, IcebergSchemaField, IcebergSnapshot, IcebergSnapshotSummary, IcebergTransform, IcebergType, IcebergUpdateResponse, ImportRedshiftManifestParams, ImportRedshiftManifestResult, ManifestCompactParams, ManifestCompactResult, ManifestListRecord, RemoveSnapshotsParams, ResolveConflictResult, SetCurrentCommitParams, SubmitSnapshotParams, SubmitSnapshotResult, TableLocation };
+export { IcebergHttpError, ManifestListSchema, addDataFiles, addManifest, addPartitionSpec, addSchema, _default as default, downloadAvro, getMetadata, getMetadataWithConfig, getS3Client, getS3TablesClient, importRedshiftManifest, manifestCompact, maxBuffer, minBuffer, parseS3Url, removeSnapshots, resolveAwsConfig, resolveS3TablesHost, setCurrentCommit, submitSnapshot };
+export type { AddDataFilesParams, AddDataFilesResult, AddFile, AddFileList, AddManifestParams, AddPartitionSpecParams, AddSchemaParams, AwsConfig, AwsConfigParams, CalculateWeightFunction, GetMetadataParams, IcebergComplexType, IcebergMetadata, IcebergPartitionField, IcebergPartitionSpec, IcebergPrimitiveType, IcebergSchema, IcebergSchemaField, IcebergSnapshot, IcebergSnapshotSummary, IcebergTransform, IcebergType, IcebergUpdateResponse, ImportRedshiftManifestParams, ImportRedshiftManifestResult, ManifestCompactParams, ManifestCompactResult, ManifestListRecord, RemoveSnapshotsParams, ResolveConflictResult, SetCurrentCommitParams, SubmitSnapshotParams, SubmitSnapshotResult, TableLocation };

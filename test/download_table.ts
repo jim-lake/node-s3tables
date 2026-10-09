@@ -6,6 +6,7 @@ import * as zlib from 'node:zlib';
 import { Readable } from 'node:stream';
 
 import { getS3Client, parseS3Url } from '../src/s3_tools';
+import { resolveAwsConfig } from '../src/config';
 import { getMetadata } from '../src/metadata';
 import { stringify } from '../src/json';
 import { AvroRegistry } from '../src/avro_types';
@@ -54,7 +55,9 @@ export async function downloadTable(
     params.tableArn?.split(':')[3] ??
     region ??
     '';
-  const s3Client = getS3Client({ region: tableRegion, credentials });
+  const s3Client = getS3Client(
+    resolveAwsConfig({ region: tableRegion, credentials })
+  );
   const doneFileSet = new Set<string>();
 
   /* Save metadata.json */

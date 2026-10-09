@@ -655,6 +655,36 @@ const ManifestListType = avsc__namespace.Type.forSchema(ManifestListSchema, {
     registry: { ...AvroRegistry },
 });
 
+/**
+ * Resolve the user-facing shortcuts into a single {@link AwsConfig}. Explicit
+ * values inside `s3ClientConfig` / `s3TablesClientConfig` always win over the
+ * `region` / `credentials` shortcuts. Call this once at a public entry point;
+ * pass the result around unchanged.
+ */
+function resolveAwsConfig(params) {
+    const { region, credentials } = params;
+    const s3ClientConfig = { ...params.s3ClientConfig };
+    const s3TablesClientConfig = {
+        ...params.s3TablesClientConfig,
+    };
+    if (region !== undefined) {
+        s3ClientConfig.region ??= region;
+        s3TablesClientConfig.region ??= region;
+    }
+    if (credentials !== undefined) {
+        s3ClientConfig.credentials ??= credentials;
+        s3TablesClientConfig.credentials ??= credentials;
+    }
+    const resolvedRegion = (typeof s3TablesClientConfig.region === 'string'
+        ? s3TablesClientConfig.region
+        : undefined) ??
+        (typeof s3ClientConfig.region === 'string'
+            ? s3ClientConfig.region
+            : undefined) ??
+        region;
+    return { region: resolvedRegion, s3ClientConfig, s3TablesClientConfig };
+}
+
 function _isPrimitive(t) {
     return typeof t === 'string';
 }
@@ -1030,46 +1060,57 @@ class ByteCounter extends node_stream.Transform {
         callback(null, chunk);
     }
 }
-function getS3Client(params) {
-    const { region, credentials } = params;
-    let ret = g_s3Map.get(region)?.get(credentials);
+/**
+ * Build a stable cache key for a client config. Non-serializable values
+ * (functions such as `credentials` providers, class instances) are keyed by a
+ * per-object identity id so distinct instances get distinct clients while
+ * identical plain-object configs are reused.
+ */
+const g_identityIds = new WeakMap();
+let g_identityCounter = 0;
+function _identityId(obj) {
+    let id = g_identityIds.get(obj);
+    if (id === undefined) {
+        id = ++g_identityCounter;
+        g_identityIds.set(obj, id);
+    }
+    return id;
+}
+function _configKey(config) {
+    return JSON.stringify(config, (_key, value) => {
+        if (typeof value === 'function') {
+            return `fn#${_identityId(value)}`;
+        }
+        if (value &&
+            typeof value === 'object' &&
+            value.constructor !== Object &&
+            !Array.isArray(value)) {
+            return `obj#${_identityId(value)}`;
+        }
+        return value;
+    });
+}
+function getS3Client(config) {
+    const key = _configKey(config.s3ClientConfig);
+    let ret = g_s3Map.get(key);
     if (!ret) {
-        const opts = {};
-        if (region) {
-            opts.region = region;
-        }
-        if (credentials) {
-            opts.credentials = credentials;
-        }
-        ret = new clientS3.S3Client(opts);
-        _setMap(g_s3Map, region, credentials, ret);
+        ret = new clientS3.S3Client(config.s3ClientConfig);
+        g_s3Map.set(key, ret);
     }
     return ret;
 }
-function getS3TablesClient(params) {
-    const { region, credentials } = params;
-    let ret = g_s3TablesMap.get(region)?.get(credentials);
+function getS3TablesClient(config) {
+    const key = _configKey(config.s3TablesClientConfig);
+    let ret = g_s3TablesMap.get(key);
     if (!ret) {
-        const opts = {};
-        if (region) {
-            opts.region = region;
-        }
-        if (credentials) {
-            opts.credentials = credentials;
-        }
-        ret = new clientS3tables.S3TablesClient(opts);
-        _setMap(g_s3TablesMap, region, credentials, ret);
+        ret = new clientS3tables.S3TablesClient(config.s3TablesClientConfig);
+        g_s3TablesMap.set(key, ret);
     }
     return ret;
-}
-function _setMap(map, region, credentials, client) {
-    let region_map = map.get(region);
-    region_map ??= new Map();
-    region_map.set(credentials, client);
 }
 async function writeS3File(params) {
-    const { credentials, region, bucket, key, body } = params;
-    const s3 = getS3Client({ region, credentials });
+    const { bucket, key, body } = params;
+    const s3 = getS3Client(params.config);
     const command = new clientS3.PutObjectCommand({
         Bucket: bucket,
         Key: key,
@@ -1078,11 +1119,11 @@ async function writeS3File(params) {
     await s3.send(command);
 }
 async function updateManifestList(params) {
-    const { region, credentials, bucket, key, outKey, prepend } = params;
+    const { bucket, key, outKey, prepend } = params;
     const metadata = params.metadata
         ? fixupMetadata(params.metadata)
         : params.metadata;
-    const s3 = getS3Client({ region, credentials });
+    const s3 = getS3Client(params.config);
     const get = new clientS3.GetObjectCommand({ Bucket: bucket, Key: key });
     const response = await s3.send(get);
     const source = response.Body;
@@ -1095,9 +1136,7 @@ async function updateManifestList(params) {
         codecs: { deflate: zlib__namespace.inflateRaw },
         parseHook(schema) {
             sourceSchema = schema;
-            return avsc__namespace.Type.forSchema(schema, {
-                registry: { ...AvroRegistry },
-            });
+            return avsc__namespace.Type.forSchema(schema, { registry: { ...AvroRegistry } });
         },
     });
     const encoder = new avsc__namespace.streams.BlockEncoder(ManifestListType, {
@@ -1148,11 +1187,11 @@ async function updateManifestList(params) {
     await Promise.all([stream_promise, upload.done()]);
 }
 async function streamWriteAvro(params) {
-    const { region, credentials, bucket, key } = params;
+    const { bucket, key } = params;
     const metadata = params.metadata
         ? fixupMetadata(params.metadata)
         : params.metadata;
-    const s3 = getS3Client({ region, credentials });
+    const s3 = getS3Client(params.config);
     const encoder = new avsc__namespace.streams.BlockEncoder(params.avroType, {
         codec: 'deflate',
         codecs: { deflate: zlib__namespace.deflateRaw },
@@ -1199,8 +1238,8 @@ async function streamWriteAvro(params) {
     return counter.bytes;
 }
 async function downloadAvro(params) {
-    const { region, credentials, bucket, key, avroSchema } = params;
-    const s3 = getS3Client({ region, credentials });
+    const { bucket, key, avroSchema } = params;
+    const s3 = getS3Client(params.config);
     const get = new clientS3.GetObjectCommand({ Bucket: bucket, Key: key });
     const response = await s3.send(get);
     const source = response.Body;
@@ -1212,9 +1251,7 @@ async function downloadAvro(params) {
         codecs: { deflate: zlib__namespace.inflateRaw },
         parseHook(schema) {
             sourceSchema = schema;
-            return avsc__namespace.Type.forSchema(schema, {
-                registry: { ...AvroRegistry },
-            });
+            return avsc__namespace.Type.forSchema(schema, { registry: { ...AvroRegistry } });
         },
     });
     const records = [];
@@ -1239,7 +1276,7 @@ async function downloadAvro(params) {
 }
 
 async function addManifest(params) {
-    const { credentials, region, metadata } = params;
+    const { config, metadata } = params;
     const bucket = metadata.location.split('/').slice(-1)[0];
     const schema = metadata.schemas.find((s) => s['schema-id'] === params.schemaId);
     const spec = metadata['partition-specs'].find((p) => p['spec-id'] === params.specId);
@@ -1318,13 +1355,7 @@ async function addManifest(params) {
         records,
     });
     const manifest_key = `metadata/${node_crypto.randomUUID()}.avro`;
-    await writeS3File({
-        credentials,
-        region,
-        bucket,
-        key: manifest_key,
-        body: manifest_buf,
-    });
+    await writeS3File({ config, bucket, key: manifest_key, body: manifest_buf });
     const manifest_record = {
         manifest_path: `s3://${bucket}/${manifest_key}`,
         manifest_length: BigInt(manifest_buf.length),
@@ -1409,13 +1440,34 @@ class IcebergHttpError extends Error {
         }
     }
 }
+/**
+ * Resolve the hostname for the S3 Tables Iceberg REST endpoint.
+ *
+ * Always uses the dual-stack endpoint `s3tables.{region}.api.aws`, which
+ * resolves to IPv4 or IPv6 depending on the network, so it works everywhere
+ * the legacy `amazonaws.com` endpoint did while also supporting IPv6-only /
+ * public-dual-stack environments. An explicit `endpoint` in
+ * `s3TablesClientConfig` overrides it.
+ */
+function resolveS3TablesHost(region, s3TablesClientConfig) {
+    const endpoint = s3TablesClientConfig?.endpoint;
+    if (typeof endpoint === 'string' && endpoint) {
+        if (endpoint.includes('://')) {
+            return new URL(endpoint).host;
+        }
+        // Bare host (optionally with port/path); keep only the authority portion.
+        return endpoint.split('/')[0] ?? endpoint;
+    }
+    return `s3tables.${region}.api.aws`;
+}
 async function icebergRequest(params) {
     const region = params.tableBucketARN.split(':')[3];
     if (!region) {
         throw new Error('bad tableBucketARN');
     }
+    const { s3TablesClientConfig } = params.config;
     const arn = encodeURIComponent(params.tableBucketARN);
-    const hostname = `s3tables.${region}.amazonaws.com`;
+    const hostname = resolveS3TablesHost(region, s3TablesClientConfig);
     const full_path = `/iceberg/v1/${arn}${params.suffix}`;
     const body = params.body ? LosslessJson.stringify(params.body) : null;
     const req_opts = {
@@ -1432,7 +1484,7 @@ async function icebergRequest(params) {
     }
     const request = new protocolHttp.HttpRequest(req_opts);
     const signer = new signatureV4.SignatureV4({
-        credentials: params.credentials ?? credentialProviderNode.defaultProvider(),
+        credentials: s3TablesClientConfig.credentials ?? credentialProviderNode.defaultProvider(),
         region,
         service: 's3tables',
         sha256: sha256Js.Sha256,
@@ -1469,26 +1521,33 @@ function _parse(text) {
 }
 
 async function getMetadata(params) {
-    if ('tableBucketARN' in params) {
+    return getMetadataWithConfig(params, resolveAwsConfig(params));
+}
+/**
+ * Internal variant of {@link getMetadata} that takes an already-resolved
+ * {@link AwsConfig}. Used by other operations so the config resolved at the
+ * public entry point flows through unchanged.
+ */
+async function getMetadataWithConfig(location, config) {
+    if ('tableBucketARN' in location) {
         const icebergResponse = await icebergRequest({
-            credentials: params.credentials,
-            tableBucketARN: params.tableBucketARN,
+            config,
+            tableBucketARN: location.tableBucketARN,
             method: 'GET',
-            suffix: `/namespaces/${params.namespace}/tables/${params.name}`,
+            suffix: `/namespaces/${location.namespace}/tables/${location.name}`,
         });
         if (icebergResponse.metadata) {
             return icebergResponse.metadata;
         }
         throw new Error('invalid table metadata');
     }
-    const { ...other } = params;
-    const client = getS3TablesClient(params);
-    const get_table_cmd = new clientS3tables.GetTableCommand(other);
+    const client = getS3TablesClient(config);
+    const get_table_cmd = new clientS3tables.GetTableCommand({ tableArn: location.tableArn });
     const response = await client.send(get_table_cmd);
     if (!response.metadataLocation) {
         throw new Error('missing metadataLocation');
     }
-    const s3_client = getS3Client(params);
+    const s3_client = getS3Client(config);
     const { key, bucket } = parseS3Url(response.metadataLocation);
     const get_file_cmd = new clientS3.GetObjectCommand({ Bucket: bucket, Key: key });
     const file_response = await s3_client.send(get_file_cmd);
@@ -1500,6 +1559,7 @@ async function getMetadata(params) {
 }
 async function addSchema(params) {
     return icebergRequest({
+        config: resolveAwsConfig(params),
         tableBucketARN: params.tableBucketARN,
         method: 'POST',
         suffix: `/namespaces/${params.namespace}/tables/${params.name}`,
@@ -1521,6 +1581,7 @@ async function addSchema(params) {
 }
 async function addPartitionSpec(params) {
     return icebergRequest({
+        config: resolveAwsConfig(params),
         tableBucketARN: params.tableBucketARN,
         method: 'POST',
         suffix: `/namespaces/${params.namespace}/tables/${params.name}`,
@@ -1542,6 +1603,7 @@ async function addPartitionSpec(params) {
 }
 async function removeSnapshots(params) {
     return icebergRequest({
+        config: resolveAwsConfig(params),
         tableBucketARN: params.tableBucketARN,
         method: 'POST',
         suffix: `/namespaces/${params.namespace}/tables/${params.name}`,
@@ -1598,7 +1660,7 @@ async function submitSnapshot(params) {
                 });
             }
             const result = await icebergRequest({
-                credentials: params.credentials,
+                config: params.config,
                 tableBucketARN: params.tableBucketARN,
                 method: 'POST',
                 suffix: `/namespaces/${params.namespace}/tables/${params.name}`,
@@ -1635,7 +1697,11 @@ async function submitSnapshot(params) {
             }
         }
         // we do a merge in the append only simultanious case
-        const conflict_metadata = await getMetadata(params);
+        const conflict_metadata = await getMetadataWithConfig({
+            tableBucketARN: params.tableBucketARN,
+            namespace: params.namespace,
+            name: params.name,
+        }, params.config);
         const conflict_snapshot_id = BigInt(conflict_metadata['current-snapshot-id']);
         if (conflict_snapshot_id <= 0n) {
             throw new Error('conflict');
@@ -1656,7 +1722,7 @@ async function submitSnapshot(params) {
 }
 async function setCurrentCommit(params) {
     const commit_result = await icebergRequest({
-        credentials: params.credentials,
+        config: resolveAwsConfig(params),
         tableBucketARN: params.tableBucketARN,
         method: 'POST',
         suffix: `/namespaces/${params.namespace}/tables/${params.name}`,
@@ -1676,13 +1742,17 @@ async function setCurrentCommit(params) {
 }
 
 async function addDataFiles(params) {
-    const { credentials } = params;
+    const config = resolveAwsConfig(params);
     const region = params.tableBucketARN.split(':')[3];
     if (!region) {
         throw new Error('bad tableBucketARN');
     }
     const snapshot_id = params.snapshotId ?? _randomBigInt64$1();
-    const metadata = await getMetadata(params);
+    const metadata = await getMetadataWithConfig({
+        tableBucketARN: params.tableBucketARN,
+        namespace: params.namespace,
+        name: params.name,
+    }, config);
     const bucket = metadata.location.split('/').slice(-1)[0];
     if (!bucket) {
         throw new Error('bad manifest location');
@@ -1718,8 +1788,7 @@ async function addDataFiles(params) {
             added_size += file.fileSize;
         }
         const opts = {
-            credentials,
-            region,
+            config,
             metadata,
             schemaId: list.schemaId,
             specId: list.specId,
@@ -1740,8 +1809,7 @@ async function addDataFiles(params) {
         const url = `s3://${bucket}/${manifest_list_key}`;
         if (old_list_key) {
             await updateManifestList({
-                credentials,
-                region,
+                config,
                 bucket,
                 key: old_list_key,
                 outKey: manifest_list_key,
@@ -1764,8 +1832,7 @@ async function addDataFiles(params) {
                 records,
             });
             await writeS3File({
-                credentials,
-                region,
+                config,
                 bucket,
                 key: manifest_list_key,
                 body: manifest_list_buf,
@@ -1799,7 +1866,7 @@ async function addDataFiles(params) {
         throw new Error('conflict');
     }
     return submitSnapshot({
-        credentials,
+        config,
         tableBucketARN: params.tableBucketARN,
         namespace: params.namespace,
         name: params.name,
@@ -1943,18 +2010,22 @@ function extractWriterStats(envelopeWriter, schema) {
 }
 
 async function importRedshiftManifest(params) {
-    const { credentials } = params;
+    const config = resolveAwsConfig(params);
     const region = params.tableBucketARN.split(':')[3];
     if (!region) {
         throw new Error('bad tableBucketARN');
     }
-    const manifest = await _downloadRedshift(params);
+    const manifest = await _downloadRedshift(config, params.redshiftManifestUrl);
     manifest.entries.sort((a, b) => {
         const sizeA = Number(a.meta.content_length);
         const sizeB = Number(b.meta.content_length);
         return sizeB - sizeA;
     });
-    const metadata = await getMetadata(params);
+    const metadata = await getMetadataWithConfig({
+        tableBucketARN: params.tableBucketARN,
+        namespace: params.namespace,
+        name: params.name,
+    }, config);
     const bucket = metadata.location.split('/').slice(-1)[0];
     if (!bucket) {
         throw new Error('bad manifest location');
@@ -1986,17 +2057,21 @@ async function importRedshiftManifest(params) {
         const part_path = parts.length > 0 ? `${parts.join('/')}/` : '';
         const key = import_prefix + part_path + file;
         const { s3Url, stats } = await _convertJsonToParquet({
-            credentials,
-            region,
+            config,
             bucket,
             key,
             url,
             schema});
         list.files.push({ file: s3Url, partitions, ...stats });
-        fileList.push({ url: s3Url, records: stats.recordCount, fileSize: stats.fileSize });
+        fileList.push({
+            url: s3Url,
+            records: stats.recordCount,
+            fileSize: stats.fileSize,
+        });
     }
     const result = await addDataFiles({
-        credentials,
+        s3ClientConfig: config.s3ClientConfig,
+        s3TablesClientConfig: config.s3TablesClientConfig,
         tableBucketARN: params.tableBucketARN,
         namespace: params.namespace,
         name: params.name,
@@ -2005,9 +2080,9 @@ async function importRedshiftManifest(params) {
     });
     return { ...result, files: fileList };
 }
-async function _downloadRedshift(params) {
-    const s3_client = getS3Client(params);
-    const { bucket, key } = parseS3Url(params.redshiftManifestUrl);
+async function _downloadRedshift(config, manifestUrl) {
+    const s3_client = getS3Client(config);
+    const { bucket, key } = parseS3Url(manifestUrl);
     const get_file_cmd = new clientS3.GetObjectCommand({ Bucket: bucket, Key: key });
     const file_response = await s3_client.send(get_file_cmd);
     const body = await file_response.Body?.transformToString();
@@ -2021,7 +2096,7 @@ async function _convertJsonToParquet(params) {
     if (!sourceBucket || !sourceKey) {
         throw new Error(`bad entry url: ${params.url}`);
     }
-    const s3_client = getS3Client(params);
+    const s3_client = getS3Client(params.config);
     const get = new clientS3.GetObjectCommand({ Bucket: sourceBucket, Key: sourceKey });
     const { Body } = await s3_client.send(get);
     if (!Body) {
@@ -2193,13 +2268,18 @@ async function* asyncIterMap(items, limit, func) {
 
 const ITER_LIMIT = 10;
 async function manifestCompact(params) {
-    const { credentials, targetCount, calculateWeight } = params;
+    const { targetCount, calculateWeight } = params;
+    const config = resolveAwsConfig(params);
     const region = params.tableBucketARN.split(':')[3];
     if (!region) {
         throw new Error('bad tableBucketARN');
     }
     const snapshot_id = params.snapshotId ?? _randomBigInt64();
-    const metadata = await getMetadata(params);
+    const metadata = await getMetadataWithConfig({
+        tableBucketARN: params.tableBucketARN,
+        namespace: params.namespace,
+        name: params.name,
+    }, config);
     const bucket = metadata.location.split('/').slice(-1)[0];
     const parent_snapshot_id = BigInt(metadata['current-snapshot-id']);
     const snapshot = metadata.snapshots.find((s) => BigInt(s['snapshot-id']) === parent_snapshot_id) ?? null;
@@ -2238,8 +2318,7 @@ async function manifestCompact(params) {
         }
     }
     const list = await downloadAvro({
-        credentials,
-        region,
+        config,
         bucket,
         key: old_list_key,
         avroSchema: ManifestListSchema,
@@ -2296,8 +2375,7 @@ async function manifestCompact(params) {
             throw new Error(`Partition spec not found: ${partition_spec_id}`);
         }
         return _combineGroup({
-            credentials,
-            region,
+            config,
             bucket,
             group,
             spec,
@@ -2308,8 +2386,7 @@ async function manifestCompact(params) {
         });
     });
     await streamWriteAvro({
-        credentials,
-        region,
+        config,
         bucket,
         key: manifest_list_key,
         metadata: {
@@ -2331,7 +2408,7 @@ async function manifestCompact(params) {
         'changed-partition-count': '0',
     };
     const snap_result = await submitSnapshot({
-        credentials,
+        config,
         tableBucketARN: params.tableBucketARN,
         namespace: params.namespace,
         name: params.name,
@@ -2352,7 +2429,7 @@ async function manifestCompact(params) {
     };
 }
 async function _combineGroup(params) {
-    const { credentials, region, bucket, group, spec } = params;
+    const { config, bucket, group, spec } = params;
     const record0 = group[0];
     if ((group.length === 1 && !params.forceRewrite) || !record0) {
         return group;
@@ -2363,16 +2440,14 @@ async function _combineGroup(params) {
     const type = makeManifestType(spec, params.schemas, true);
     const iter = asyncIterMap(group, ITER_LIMIT, async (record) => {
         return _streamReadManifest({
-            credentials,
-            region,
+            config,
             bucket,
             url: record.manifest_path,
             schema,
         });
     });
     const manifest_length = await streamWriteAvro({
-        credentials,
-        region,
+        config,
         bucket,
         key,
         metadata: {
@@ -2443,8 +2518,7 @@ async function _streamReadManifest(params) {
         throw new Error(`invalid manfiest url: ${params.url}`);
     }
     const results = await downloadAvro({
-        credentials: params.credentials,
-        region: params.region,
+        config: params.config,
         bucket,
         key,
         avroSchema: params.schema,
@@ -2555,11 +2629,16 @@ exports.addSchema = addSchema;
 exports.default = index;
 exports.downloadAvro = downloadAvro;
 exports.getMetadata = getMetadata;
+exports.getMetadataWithConfig = getMetadataWithConfig;
+exports.getS3Client = getS3Client;
+exports.getS3TablesClient = getS3TablesClient;
 exports.importRedshiftManifest = importRedshiftManifest;
 exports.manifestCompact = manifestCompact;
 exports.maxBuffer = maxBuffer;
 exports.minBuffer = minBuffer;
 exports.parseS3Url = parseS3Url;
 exports.removeSnapshots = removeSnapshots;
+exports.resolveAwsConfig = resolveAwsConfig;
+exports.resolveS3TablesHost = resolveS3TablesHost;
 exports.setCurrentCommit = setCurrentCommit;
 exports.submitSnapshot = submitSnapshot;

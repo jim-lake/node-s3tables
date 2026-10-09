@@ -1,14 +1,15 @@
-import { getMetadata } from './metadata';
+import { resolveAwsConfig } from './config';
+import { getMetadataWithConfig } from './metadata';
 import { icebergRequest, IcebergHttpError } from './request';
 
-import type { AwsCredentialIdentity } from '@aws-sdk/types';
+import type { AwsConfig, AwsConfigParams } from './config';
 import type { IcebergSnapshot } from './iceberg';
 import type { JSONObject, JSONArray } from './json';
 
 const DEFAULT_RETRY_COUNT = 5;
 
 export interface SubmitSnapshotParams {
-  credentials?: AwsCredentialIdentity | undefined;
+  config: AwsConfig;
   tableBucketARN: string;
   namespace: string;
   name: string;
@@ -81,7 +82,7 @@ export async function submitSnapshot(
         });
       }
       const result = await icebergRequest({
-        credentials: params.credentials,
+        config: params.config,
         tableBucketARN: params.tableBucketARN,
         method: 'POST',
         suffix: `/namespaces/${params.namespace}/tables/${params.name}`,
@@ -120,7 +121,14 @@ export async function submitSnapshot(
     }
 
     // we do a merge in the append only simultanious case
-    const conflict_metadata = await getMetadata(params);
+    const conflict_metadata = await getMetadataWithConfig(
+      {
+        tableBucketARN: params.tableBucketARN,
+        namespace: params.namespace,
+        name: params.name,
+      },
+      params.config
+    );
     const conflict_snapshot_id = BigInt(
       conflict_metadata['current-snapshot-id']
     );
@@ -144,8 +152,7 @@ export async function submitSnapshot(
     }
   }
 }
-export interface SetCurrentCommitParams {
-  credentials?: AwsCredentialIdentity;
+export interface SetCurrentCommitParams extends AwsConfigParams {
   tableBucketARN: string;
   namespace: string;
   name: string;
@@ -153,7 +160,7 @@ export interface SetCurrentCommitParams {
 }
 export async function setCurrentCommit(params: SetCurrentCommitParams) {
   const commit_result = await icebergRequest({
-    credentials: params.credentials,
+    config: resolveAwsConfig(params),
     tableBucketARN: params.tableBucketARN,
     method: 'POST',
     suffix: `/namespaces/${params.namespace}/tables/${params.name}`,

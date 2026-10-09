@@ -4,7 +4,7 @@ import * as avsc from 'avsc';
 import * as path from 'node:path';
 import * as zlib from 'node:zlib';
 import { ManifestListType } from '../src/avro_schema';
-import { BigIntType } from '../src/avro_types';
+import { BigIntType, ListContent } from '../src/avro_types';
 import { log } from './helpers/log_helper';
 
 import type { ManifestListRecord } from '../src/avro_types';
@@ -108,7 +108,7 @@ void describe('Manifest List Decoder', () => {
       manifest_path: 's3://test-bucket/metadata/test.avro',
       manifest_length: 1000n,
       partition_spec_id: 1,
-      content: 0,
+      content: ListContent.DATA,
       sequence_number: 1n,
       min_sequence_number: 1n,
       added_snapshot_id: 123456789n,
@@ -155,7 +155,7 @@ void describe('Manifest List Decoder', () => {
       manifest_path: 's3://test-bucket/metadata/test.avro',
       manifest_length: 1000n,
       partition_spec_id: 1,
-      content: 0,
+      content: ListContent.DATA,
       sequence_number: 1n,
       min_sequence_number: 1n,
       added_snapshot_id: 123456789n,

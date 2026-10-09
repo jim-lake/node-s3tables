@@ -2,12 +2,7 @@ import { test } from './helpers/test_helper';
 import { log } from './helpers/log_helper';
 import { strict as assert } from 'node:assert';
 import { makeBounds } from '../src/avro_transform';
-import type {
-  IcebergPartitionSpec,
-  IcebergSchema,
-  IcebergType,
-  IcebergTransform,
-} from '../src/iceberg';
+import type { IcebergPartitionSpec, IcebergSchema } from '../src/iceberg';
 import type { PartitionRecord } from '../src/avro_types';
 
 // Test data combinations: [transform, sourceType, inputValue, expectedBuffer]
@@ -82,12 +77,7 @@ void test('makeBounds - comprehensive transform/type combinations', async (t) =>
           type: 'struct',
           'schema-id': 1,
           fields: [
-            {
-              id: 1,
-              name: 'test_field',
-              type: sourceType as IcebergType,
-              required: false,
-            },
+            { id: 1, name: 'test_field', type: sourceType, required: false },
           ],
         };
 
@@ -98,7 +88,7 @@ void test('makeBounds - comprehensive transform/type combinations', async (t) =>
               'field-id': 1000,
               name: 'partition_field',
               'source-id': 1,
-              transform: transform as IcebergTransform,
+              transform,
             },
           ],
         };

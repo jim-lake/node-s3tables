@@ -5,7 +5,7 @@ import { makeBounds, compareBounds } from './avro_transform';
 import { writeS3File } from './s3_tools';
 import { ManifestFileStatus, DataFileContent, ListContent } from './avro_types';
 
-import type { AwsCredentialIdentity } from '@aws-sdk/types';
+import type { AwsConfig } from './config';
 import type {
   ManifestFileRecord,
   ManifestListRecord,
@@ -35,8 +35,7 @@ export interface AddFile {
   sortOrderId?: number | null | undefined;
 }
 export interface AddManifestParams {
-  credentials?: AwsCredentialIdentity | undefined;
-  region: string;
+  config: AwsConfig;
   metadata: IcebergMetadata;
   schemaId: number;
   specId: number;
@@ -47,7 +46,7 @@ export interface AddManifestParams {
 export async function addManifest(
   params: AddManifestParams
 ): Promise<ManifestListRecord> {
-  const { credentials, region, metadata } = params;
+  const { config, metadata } = params;
   const bucket = metadata.location.split('/').slice(-1)[0];
   const schema = metadata.schemas.find(
     (s) => s['schema-id'] === params.schemaId
@@ -138,13 +137,7 @@ export async function addManifest(
     records,
   });
   const manifest_key = `metadata/${randomUUID()}.avro`;
-  await writeS3File({
-    credentials,
-    region,
-    bucket,
-    key: manifest_key,
-    body: manifest_buf,
-  });
+  await writeS3File({ config, bucket, key: manifest_key, body: manifest_buf });
 
   const manifest_record = {
     manifest_path: `s3://${bucket}/${manifest_key}`,

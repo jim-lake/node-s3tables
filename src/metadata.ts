@@ -2,10 +2,11 @@ import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { GetTableCommand } from '@aws-sdk/client-s3tables';
 
 import { parse } from './json';
+import { resolveAwsConfig } from './config';
 import { icebergRequest } from './request';
 import { parseS3Url, getS3Client, getS3TablesClient } from './s3_tools';
 
-import type { AwsCredentialIdentity } from '@aws-sdk/types';
+import type { AwsConfig, AwsConfigParams } from './config';
 import type {
   IcebergSchemaField,
   IcebergPartitionField,
@@ -18,36 +19,45 @@ export default { getMetadata, addSchema, addPartitionSpec, removeSnapshots };
 export type TableLocation =
   | { tableArn: string }
   | { tableBucketARN: string; namespace: string; name: string };
-export type GetMetadataParams = TableLocation & {
-  region?: string;
-  credentials?: AwsCredentialIdentity | undefined;
-};
+export type GetMetadataParams = TableLocation & AwsConfigParams;
+
 export async function getMetadata(
   params: GetMetadataParams
 ): Promise<IcebergMetadata> {
-  if ('tableBucketARN' in params) {
+  return getMetadataWithConfig(params, resolveAwsConfig(params));
+}
+
+/**
+ * Internal variant of {@link getMetadata} that takes an already-resolved
+ * {@link AwsConfig}. Used by other operations so the config resolved at the
+ * public entry point flows through unchanged.
+ */
+export async function getMetadataWithConfig(
+  location: TableLocation,
+  config: AwsConfig
+): Promise<IcebergMetadata> {
+  if ('tableBucketARN' in location) {
     interface Response {
       metadata?: IcebergMetadata;
     }
     const icebergResponse = await icebergRequest<Response>({
-      credentials: params.credentials,
-      tableBucketARN: params.tableBucketARN,
+      config,
+      tableBucketARN: location.tableBucketARN,
       method: 'GET',
-      suffix: `/namespaces/${params.namespace}/tables/${params.name}`,
+      suffix: `/namespaces/${location.namespace}/tables/${location.name}`,
     });
     if (icebergResponse.metadata) {
       return icebergResponse.metadata;
     }
     throw new Error('invalid table metadata');
   }
-  const { ...other } = params;
-  const client = getS3TablesClient(params);
-  const get_table_cmd = new GetTableCommand(other);
+  const client = getS3TablesClient(config);
+  const get_table_cmd = new GetTableCommand({ tableArn: location.tableArn });
   const response = await client.send(get_table_cmd);
   if (!response.metadataLocation) {
     throw new Error('missing metadataLocation');
   }
-  const s3_client = getS3Client(params);
+  const s3_client = getS3Client(config);
   const { key, bucket } = parseS3Url(response.metadataLocation);
   const get_file_cmd = new GetObjectCommand({ Bucket: bucket, Key: key });
   const file_response = await s3_client.send(get_file_cmd);
@@ -57,8 +67,7 @@ export async function getMetadata(
   }
   return parse(body) as unknown as IcebergMetadata;
 }
-export interface AddSchemaParams {
-  credentials?: AwsCredentialIdentity;
+export interface AddSchemaParams extends AwsConfigParams {
   tableBucketARN: string;
   namespace: string;
   name: string;
@@ -74,6 +83,7 @@ export async function addSchema(
   params: AddSchemaParams
 ): Promise<IcebergUpdateResponse> {
   return icebergRequest<IcebergUpdateResponse>({
+    config: resolveAwsConfig(params),
     tableBucketARN: params.tableBucketARN,
     method: 'POST',
     suffix: `/namespaces/${params.namespace}/tables/${params.name}`,
@@ -93,8 +103,7 @@ export async function addSchema(
     },
   });
 }
-export interface AddPartitionSpecParams {
-  credentials?: AwsCredentialIdentity;
+export interface AddPartitionSpecParams extends AwsConfigParams {
   tableBucketARN: string;
   namespace: string;
   name: string;
@@ -105,6 +114,7 @@ export async function addPartitionSpec(
   params: AddPartitionSpecParams
 ): Promise<IcebergUpdateResponse> {
   return icebergRequest<IcebergUpdateResponse>({
+    config: resolveAwsConfig(params),
     tableBucketARN: params.tableBucketARN,
     method: 'POST',
     suffix: `/namespaces/${params.namespace}/tables/${params.name}`,
@@ -124,8 +134,7 @@ export async function addPartitionSpec(
     },
   });
 }
-export interface RemoveSnapshotsParams {
-  credentials?: AwsCredentialIdentity;
+export interface RemoveSnapshotsParams extends AwsConfigParams {
   tableBucketARN: string;
   namespace: string;
   name: string;
@@ -135,6 +144,7 @@ export async function removeSnapshots(
   params: RemoveSnapshotsParams
 ): Promise<IcebergUpdateResponse> {
   return icebergRequest<IcebergUpdateResponse>({
+    config: resolveAwsConfig(params),
     tableBucketARN: params.tableBucketARN,
     method: 'POST',
     suffix: `/namespaces/${params.namespace}/tables/${params.name}`,

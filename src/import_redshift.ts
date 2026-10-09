@@ -7,20 +7,20 @@ import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import { ParquetWriter, ParquetSchema } from 'parquetjs';
 import { addDataFiles } from './add_data_files';
+import { resolveAwsConfig } from './config';
 import { parse } from './json';
-import { getMetadata } from './metadata';
+import { getMetadataWithConfig } from './metadata';
 import { parseS3Url, getS3Client } from './s3_tools';
 import { icebergToParquetSchema, extractWriterStats } from './parquet_tools';
 
-import type { AwsCredentialIdentity } from '@aws-sdk/types';
+import type { AwsConfig, AwsConfigParams } from './config';
 import type { AddDataFilesResult, AddFileList } from './add_data_files';
 import type { AddFile } from './manifest';
 import type { IcebergMetadata, IcebergSchema } from './iceberg';
 
 export default { importRedshiftManifest };
 
-export interface ImportRedshiftManifestParams {
-  credentials?: AwsCredentialIdentity;
+export interface ImportRedshiftManifestParams extends AwsConfigParams {
   tableBucketARN: string;
   namespace: string;
   name: string;
@@ -38,19 +38,26 @@ export interface ImportRedshiftManifestResult extends AddDataFilesResult {
 export async function importRedshiftManifest(
   params: ImportRedshiftManifestParams
 ): Promise<ImportRedshiftManifestResult> {
-  const { credentials } = params;
+  const config = resolveAwsConfig(params);
   const region = params.tableBucketARN.split(':')[3];
   if (!region) {
     throw new Error('bad tableBucketARN');
   }
-  const manifest = await _downloadRedshift(params);
+  const manifest = await _downloadRedshift(config, params.redshiftManifestUrl);
   manifest.entries.sort((a, b) => {
     const sizeA = Number(a.meta.content_length);
     const sizeB = Number(b.meta.content_length);
     return sizeB - sizeA;
   });
 
-  const metadata = await getMetadata(params);
+  const metadata = await getMetadataWithConfig(
+    {
+      tableBucketARN: params.tableBucketARN,
+      namespace: params.namespace,
+      name: params.name,
+    },
+    config
+  );
   const bucket = metadata.location.split('/').slice(-1)[0];
   if (!bucket) {
     throw new Error('bad manifest location');
@@ -89,8 +96,7 @@ export async function importRedshiftManifest(
     const part_path = parts.length > 0 ? `${parts.join('/')}/` : '';
     const key = import_prefix + part_path + file;
     const { s3Url, stats } = await _convertJsonToParquet({
-      credentials,
-      region,
+      config,
       bucket,
       key,
       url,
@@ -106,7 +112,8 @@ export async function importRedshiftManifest(
   }
 
   const result = await addDataFiles({
-    credentials,
+    s3ClientConfig: config.s3ClientConfig,
+    s3TablesClientConfig: config.s3TablesClientConfig,
     tableBucketARN: params.tableBucketARN,
     namespace: params.namespace,
     name: params.name,
@@ -125,9 +132,9 @@ interface RedshiftManifest {
   schema: { elements: { name: string }[] };
 }
 
-async function _downloadRedshift(params: ImportRedshiftManifestParams) {
-  const s3_client = getS3Client(params);
-  const { bucket, key } = parseS3Url(params.redshiftManifestUrl);
+async function _downloadRedshift(config: AwsConfig, manifestUrl: string) {
+  const s3_client = getS3Client(config);
+  const { bucket, key } = parseS3Url(manifestUrl);
   const get_file_cmd = new GetObjectCommand({ Bucket: bucket, Key: key });
   const file_response = await s3_client.send(get_file_cmd);
   const body = await file_response.Body?.transformToString();
@@ -138,8 +145,7 @@ async function _downloadRedshift(params: ImportRedshiftManifestParams) {
 }
 
 interface ConvertJsonToParquetParams {
-  credentials?: AwsCredentialIdentity | undefined;
-  region: string;
+  config: AwsConfig;
   bucket: string;
   key: string;
   url: string;
@@ -159,7 +165,7 @@ async function _convertJsonToParquet(
   if (!sourceBucket || !sourceKey) {
     throw new Error(`bad entry url: ${params.url}`);
   }
-  const s3_client = getS3Client(params);
+  const s3_client = getS3Client(params.config);
 
   const get = new GetObjectCommand({ Bucket: sourceBucket, Key: sourceKey });
   const { Body } = await s3_client.send(get);
