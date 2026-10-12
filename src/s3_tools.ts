@@ -5,7 +5,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { S3TablesClient } from '@aws-sdk/client-s3tables';
 import { Upload } from '@aws-sdk/lib-storage';
-import * as avsc from 'avsc';
+import * as avsc from '@jim-lake/avsc';
 import { PassThrough, Transform } from 'node:stream';
 import * as zlib from 'node:zlib';
 
@@ -15,7 +15,7 @@ import { AvroRegistry, ListContent } from './avro_types';
 import { translateRecord } from './schema_translator';
 
 import type { Readable } from 'node:stream';
-import type { Schema, Type } from 'avsc';
+import type { Schema, Type } from '@jim-lake/avsc';
 import type { ManifestListRecord } from './avro_types';
 import type { AwsConfig } from './config';
 

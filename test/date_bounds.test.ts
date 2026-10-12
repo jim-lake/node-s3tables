@@ -2,7 +2,7 @@ import { test } from './helpers/test_helper';
 import { log } from './helpers/log_helper';
 import { strict as assert } from 'node:assert';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
-import * as avsc from 'avsc';
+import * as avsc from '@jim-lake/avsc';
 import * as zlib from 'node:zlib';
 import { config } from './helpers/aws_clients';
 import { setupTable } from './helpers/table_lifecycle';

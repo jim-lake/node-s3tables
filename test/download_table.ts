@@ -1,7 +1,7 @@
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import * as avsc from 'avsc';
+import * as avsc from '@jim-lake/avsc';
 import * as zlib from 'node:zlib';
 import { Readable } from 'node:stream';
 

@@ -15,7 +15,7 @@ import { parseS3Url, downloadAvro, streamWriteAvro } from './s3_tools';
 import { submitSnapshot } from './snapshot';
 
 import type { AwsConfig, AwsConfigParams } from './config';
-import type { Schema } from 'avsc';
+import type { Schema } from '@jim-lake/avsc';
 import type { IcebergPartitionSpec, IcebergSchema } from './iceberg';
 import type { ManifestListRecord, ManifestFileRecord } from './avro_types';
 import type { SubmitSnapshotResult } from './snapshot';

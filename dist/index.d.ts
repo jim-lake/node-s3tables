@@ -3,8 +3,8 @@ export { S3ClientConfig } from '@aws-sdk/client-s3';
 import { S3TablesClientConfig, S3TablesClient } from '@aws-sdk/client-s3tables';
 export { S3TablesClientConfig } from '@aws-sdk/client-s3tables';
 import { AwsCredentialIdentity } from '@aws-sdk/types';
-import * as avsc from 'avsc';
-import { Schema } from 'avsc';
+import * as avsc from '@jim-lake/avsc';
+import { Schema } from '@jim-lake/avsc';
 
 /**
  * User-facing AWS configuration accepted by every public API in this library.

@@ -8,7 +8,7 @@ import { config, clients } from './helpers/aws_clients';
 import { setupTable } from './helpers/table_lifecycle';
 import { queryRows } from './helpers/athena_helper';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
-import { ParquetWriter, ParquetSchema } from 'parquetjs';
+import { ParquetWriter, ParquetSchema } from '@jim-lake/parquetjs';
 
 import { getMetadata, addSchema, addPartitionSpec, addDataFiles } from '../src';
 

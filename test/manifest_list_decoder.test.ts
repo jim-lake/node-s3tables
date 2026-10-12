@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import * as assert from 'node:assert';
-import * as avsc from 'avsc';
+import * as avsc from '@jim-lake/avsc';
 import * as path from 'node:path';
 import * as zlib from 'node:zlib';
 import { ManifestListType } from '../src/avro_schema';

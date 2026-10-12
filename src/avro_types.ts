@@ -1,4 +1,4 @@
-import * as avsc from 'avsc';
+import * as avsc from '@jim-lake/avsc';
 
 export enum ManifestFileStatus {
   EXISTING = 0,

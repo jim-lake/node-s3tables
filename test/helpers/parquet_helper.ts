@@ -1,6 +1,6 @@
 import { PassThrough } from 'node:stream';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
-import { ParquetWriter, ParquetSchema } from 'parquetjs';
+import { ParquetWriter, ParquetSchema } from '@jim-lake/parquetjs';
 import { clients } from './aws_clients';
 
 export async function createSimpleParquetFile(

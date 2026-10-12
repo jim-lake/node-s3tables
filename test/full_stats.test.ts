@@ -7,7 +7,7 @@ import { setupTable } from './helpers/table_lifecycle';
 import { queryRows } from './helpers/athena_helper';
 import { PassThrough } from 'node:stream';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
-import { ParquetWriter, ParquetSchema } from 'parquetjs';
+import { ParquetWriter, ParquetSchema } from '@jim-lake/parquetjs';
 
 import { getMetadata, addDataFiles } from '../src';
 import type { AddFile } from '../src/manifest';
@@ -38,6 +38,9 @@ async function createParquetFileWithStats(
 
   // Get stats from envelopeWriter before closing
   const envelopeWriter = writer.envelopeWriter;
+  if (!envelopeWriter) {
+    throw new Error('envelopeWriter is null');
+  }
 
   await writer.close();
   const fileBuffer = Buffer.concat(chunks);
@@ -54,7 +57,23 @@ async function createParquetFileWithStats(
   const lowerBounds: Record<string, Buffer> = {};
   const upperBounds: Record<string, Buffer> = {};
 
-  for (const rg of envelopeWriter.rowGroups) {
+  interface ColumnMetaView {
+    meta_data?: {
+      path_in_schema?: string[];
+      total_compressed_size?: number;
+      num_values?: number;
+      statistics?: {
+        null_count?: number;
+        min_value?: Buffer;
+        max_value?: Buffer;
+      };
+    };
+  }
+  const rowGroups = envelopeWriter.rowGroups as unknown as {
+    columns: ColumnMetaView[];
+  }[];
+
+  for (const rg of rowGroups) {
     for (const column of rg.columns) {
       const fieldName = column.meta_data?.path_in_schema?.[0];
       if (fieldName && column.meta_data) {

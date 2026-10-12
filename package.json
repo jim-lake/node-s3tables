@@ -1,6 +1,6 @@
 {
   "name": "node-s3tables",
-  "version": "0.0.20",
+  "version": "0.0.21",
   "description": "node api for dealing with s3tables",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -36,9 +36,9 @@
     "@aws-sdk/lib-storage": "^3.901.0",
     "@smithy/protocol-http": "^5.0.0",
     "@smithy/signature-v4": "^5.0.0",
-    "avsc": "https://github.com/jim-lake/avsc.git#5d11bd129cca8bd03b6f4aec24b8083a9e580000",
-    "lossless-json": "^4.2.0",
-    "parquetjs": "https://github.com/jim-lake/parquetjs.git#b9f60a4881678212c2730c398336b2522fc723f5"
+    "@jim-lake/avsc": "^6.1.0",
+    "@jim-lake/parquetjs": "^0.1.1",
+    "lossless-json": "^4.2.0"
   },
   "devDependencies": {
     "@aws-sdk/client-athena": "^3.901.0",

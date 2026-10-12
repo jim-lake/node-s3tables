@@ -3,7 +3,7 @@
 Object.defineProperty(exports, '__esModule', { value: true });
 
 var node_crypto = require('node:crypto');
-var avsc = require('avsc');
+var avsc = require('@jim-lake/avsc');
 var zlib = require('node:zlib');
 var clientS3 = require('@aws-sdk/client-s3');
 var clientS3tables = require('@aws-sdk/client-s3tables');
@@ -15,7 +15,7 @@ var sha256Js = require('@aws-crypto/sha256-js');
 var protocolHttp = require('@smithy/protocol-http');
 var credentialProviderNode = require('@aws-sdk/credential-provider-node');
 var promises = require('node:stream/promises');
-var parquetjs = require('parquetjs');
+var parquetjs = require('@jim-lake/parquetjs');
 
 function _interopNamespaceDefault(e) {
     var n = Object.create(null);
@@ -1946,13 +1946,14 @@ function icebergTypeToParquet(type) {
     return null;
 }
 function extractWriterStats(envelopeWriter, schema) {
+    const { rowGroups } = envelopeWriter;
     const columnSizes = {};
     const valueCounts = {};
     const nullValueCounts = {};
     const lowerBounds = {};
     const upperBounds = {};
     let recordCount = 0n;
-    for (const rg of envelopeWriter.rowGroups) {
+    for (const rg of rowGroups) {
         for (const column of rg.columns) {
             const fieldName = column.meta_data?.path_in_schema?.[0];
             if (fieldName && column.meta_data) {
@@ -2132,7 +2133,11 @@ async function _convertJsonToParquet(params) {
     }));
     await writer.close();
     await uploadPromise;
-    const stats = extractWriterStats(writer.envelopeWriter, params.schema);
+    const { envelopeWriter } = writer;
+    if (!envelopeWriter) {
+        throw new Error('envelopeWriter is null');
+    }
+    const stats = extractWriterStats(envelopeWriter, params.schema);
     return {
         s3Url: `s3://${params.bucket}/${params.key}`,
         stats: { ...stats, fileSize, recordCount },

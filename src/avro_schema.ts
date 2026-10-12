@@ -1,4 +1,4 @@
-import * as avsc from 'avsc';
+import * as avsc from '@jim-lake/avsc';
 import { AvroRegistry, AvroLogicalTypes } from './avro_types';
 
 import { icebergToAvroFields } from './avro_helper';

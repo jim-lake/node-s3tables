@@ -1,17 +1,20 @@
 import { PassThrough } from 'node:stream';
-import { ParquetReader, ParquetWriter, ParquetSchema } from 'parquetjs';
+import {
+  ParquetReader,
+  ParquetWriter,
+  ParquetSchema,
+} from '@jim-lake/parquetjs';
 import { Upload } from '@aws-sdk/lib-storage';
 import { encodeValue } from './avro_transform';
 
 import type { S3Client } from '@aws-sdk/client-s3';
+import type {
+  SchemaDefinition,
+  ParquetType,
+  ParquetEnvelopeWriter,
+} from '@jim-lake/parquetjs';
 import type { IcebergSchema, IcebergType, IcebergSchemaField } from './iceberg';
 import type { AddFile } from './manifest';
-
-interface ParquetSchemaField {
-  type: string;
-  compression?: string;
-  optional?: boolean;
-}
 
 const JULIAN_UNIX_EPOCH_DIFF = 2440588;
 const NANOS_PER_DAY = 86400000000000n;
@@ -19,8 +22,8 @@ const MICROS_PER_MILLI = 1000n;
 
 export function icebergToParquetSchema(
   schema: IcebergSchema
-): Record<string, ParquetSchemaField> {
-  const result: Record<string, ParquetSchemaField> = {};
+): SchemaDefinition {
+  const result: SchemaDefinition = {};
   for (const field of schema.fields) {
     const pqType = icebergTypeToParquet(field.type);
     if (pqType) {
@@ -34,7 +37,7 @@ export function icebergToParquetSchema(
   return result;
 }
 
-function icebergTypeToParquet(type: IcebergType): string | null {
+function icebergTypeToParquet(type: IcebergType): ParquetType | null {
   if (typeof type === 'string') {
     switch (type) {
       case 'boolean':
@@ -152,7 +155,7 @@ export async function rewriteParquet(
   const uploadPromise = upload.done();
 
   let row: Record<string, unknown> | null;
-  while ((row = await cursor.next())) {
+  while ((row = (await cursor.next()) as Record<string, unknown> | null)) {
     const converted: Record<string, unknown> = {};
     for (const field of schema.fields) {
       const val = row[field.name] ?? partitions?.[field.name];
@@ -165,7 +168,11 @@ export async function rewriteParquet(
   await writer.close();
   await uploadPromise;
 
-  return { fileSize, stats: extractWriterStats(writer.envelopeWriter, schema) };
+  const { envelopeWriter } = writer;
+  if (!envelopeWriter) {
+    throw new Error('envelopeWriter is null');
+  }
+  return { fileSize, stats: extractWriterStats(envelopeWriter, schema) };
 }
 
 interface ParquetWriterColumnMetadata {
@@ -185,7 +192,7 @@ interface ParquetWriterRowGroup {
   columns: ParquetWriterColumnMetadata[];
 }
 
-interface ParquetEnvelopeWriter {
+interface ParquetWriterStatsView {
   rowGroups: ParquetWriterRowGroup[];
 }
 
@@ -193,6 +200,7 @@ export function extractWriterStats(
   envelopeWriter: ParquetEnvelopeWriter,
   schema: IcebergSchema
 ): Omit<AddFile, 'file' | 'partitions'> {
+  const { rowGroups } = envelopeWriter as unknown as ParquetWriterStatsView;
   const columnSizes: Record<string, bigint> = {};
   const valueCounts: Record<string, bigint> = {};
   const nullValueCounts: Record<string, bigint> = {};
@@ -200,7 +208,7 @@ export function extractWriterStats(
   const upperBounds: Record<string, Buffer> = {};
   let recordCount = 0n;
 
-  for (const rg of envelopeWriter.rowGroups) {
+  for (const rg of rowGroups) {
     for (const column of rg.columns) {
       const fieldName = column.meta_data?.path_in_schema?.[0];
       if (fieldName && column.meta_data) {

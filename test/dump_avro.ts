@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import * as avsc from 'avsc';
+import * as avsc from '@jim-lake/avsc';
 
 const filename = process.argv[2];
 const outputFile = process.argv[3];

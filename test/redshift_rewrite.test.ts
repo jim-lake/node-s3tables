@@ -17,7 +17,7 @@ import { resolveAwsConfig } from '../src/config';
 import { PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { ParquetReader } from 'parquetjs';
+import { ParquetReader } from '@jim-lake/parquetjs';
 import type { ManifestListRecord, ManifestFileRecord } from '../src/avro_types';
 
 interface ManifestEntry {

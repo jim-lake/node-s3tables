@@ -5,7 +5,7 @@ import { Transform, Writable, PassThrough } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
-import { ParquetWriter, ParquetSchema } from 'parquetjs';
+import { ParquetWriter, ParquetSchema } from '@jim-lake/parquetjs';
 import { addDataFiles } from './add_data_files';
 import { resolveAwsConfig } from './config';
 import { parse } from './json';
@@ -217,7 +217,11 @@ async function _convertJsonToParquet(
   await writer.close();
   await uploadPromise;
 
-  const stats = extractWriterStats(writer.envelopeWriter, params.schema);
+  const { envelopeWriter } = writer;
+  if (!envelopeWriter) {
+    throw new Error('envelopeWriter is null');
+  }
+  const stats = extractWriterStats(envelopeWriter, params.schema);
 
   return {
     s3Url: `s3://${params.bucket}/${params.key}`,

@@ -4,7 +4,7 @@ import { PassThrough } from 'node:stream';
 import { config, clients } from './helpers/aws_clients';
 import { setupTable } from './helpers/table_lifecycle';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
-import { ParquetWriter, ParquetSchema } from 'parquetjs';
+import { ParquetWriter, ParquetSchema } from '@jim-lake/parquetjs';
 
 import { getMetadata, addSchema, addDataFiles } from '../src';
 
