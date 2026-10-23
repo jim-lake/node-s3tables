@@ -20,7 +20,8 @@ export async function setupTable(
   t: TestContext,
   namePrefix: string,
   tableName: string,
-  schema: { id?: number; name: string; type: string; required: boolean }[]
+  schema: { id?: number; name: string; type: string; required: boolean }[],
+  properties?: Record<string, string>
 ): Promise<TableSetup> {
   const namespace = `${namePrefix}_${Math.floor(Math.random() * 10000)}`;
   const name = tableName;
@@ -98,7 +99,18 @@ export async function setupTable(
       namespace,
       name,
       format: 'ICEBERG',
-      metadata: { iceberg: { schema: { fields: schema } } },
+      metadata: {
+        iceberg: {
+          schema: { fields: schema },
+          /*
+           * Optional Iceberg table properties (for example snapshot-retention
+           * settings like `history.expire.max-snapshot-age-ms`). Set at create
+           * time via the S3 Tables CreateTable metadata so the table is created
+           * with them in one call.
+           */
+          ...(properties && { properties }),
+        },
+      },
     })
   );
   const tableArn = table_result.tableARN;
