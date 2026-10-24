@@ -14,7 +14,14 @@ import type {
 } from './iceberg';
 export type * from './iceberg';
 
-export default { getMetadata, addSchema, addPartitionSpec, removeSnapshots };
+export default {
+  getMetadata,
+  addSchema,
+  setCurrentSchema,
+  addPartitionSpec,
+  setDefaultSpec,
+  removeSnapshots,
+};
 
 export type TableLocation =
   | { tableArn: string }
@@ -103,6 +110,26 @@ export async function addSchema(
     },
   });
 }
+export interface SetCurrentSchemaParams extends AwsConfigParams {
+  tableBucketARN: string;
+  namespace: string;
+  name: string;
+  schemaId: number;
+}
+export async function setCurrentSchema(
+  params: SetCurrentSchemaParams
+): Promise<IcebergUpdateResponse> {
+  return icebergRequest<IcebergUpdateResponse>({
+    config: resolveAwsConfig(params),
+    tableBucketARN: params.tableBucketARN,
+    method: 'POST',
+    suffix: `/namespaces/${params.namespace}/tables/${params.name}`,
+    body: {
+      requirements: [],
+      updates: [{ action: 'set-current-schema', 'schema-id': params.schemaId }],
+    },
+  });
+}
 export interface AddPartitionSpecParams extends AwsConfigParams {
   tableBucketARN: string;
   namespace: string;
@@ -131,6 +158,26 @@ export async function addPartitionSpec(
         },
         { action: 'set-default-spec', 'spec-id': params.specId },
       ],
+    },
+  });
+}
+export interface SetDefaultSpecParams extends AwsConfigParams {
+  tableBucketARN: string;
+  namespace: string;
+  name: string;
+  specId: number;
+}
+export async function setDefaultSpec(
+  params: SetDefaultSpecParams
+): Promise<IcebergUpdateResponse> {
+  return icebergRequest<IcebergUpdateResponse>({
+    config: resolveAwsConfig(params),
+    tableBucketARN: params.tableBucketARN,
+    method: 'POST',
+    suffix: `/namespaces/${params.namespace}/tables/${params.name}`,
+    body: {
+      requirements: [],
+      updates: [{ action: 'set-default-spec', 'spec-id': params.specId }],
     },
   });
 }

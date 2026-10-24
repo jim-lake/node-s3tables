@@ -8,6 +8,16 @@ Node.js/TypeScript library for AWS S3 Tables via the Iceberg REST API
 (`s3tables.{region}.amazonaws.com/iceberg/v1/...`). Source in `src/`, tests in
 `test/`. Public API is documented in `README.md`.
 
+## Code style
+
+- NO block comments, NO file-header comments, NO function/doc comments in
+  source or tests. The only in-code exception is external documentation
+  (`README.md` and the like).
+- The only comments allowed in code are single-line comments explaining genuine
+  non-obvious control flow.
+- Never document anything obvious to a user of the library who is expected to
+  have the relevant domain knowledge (Iceberg, S3 Tables, AWS).
+
 ## Toolchain
 
 - Node `v24.x`, npm `11.x`. Dependencies are installed (`node_modules/`).

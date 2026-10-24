@@ -73,6 +73,13 @@ const metadata = await getMetadata({
 
 Adds a new schema to an S3 table and sets it as current.
 
+Submit the full field set you want the table to have; columns are added or
+dropped by including or omitting them. The field set must be new — S3 Tables
+rejects an `add-schema` whose fields are identical to a schema already in the
+table's history. To make an existing schema current again (for example to drop
+a just-added column and revert to the prior schema), use
+[`setCurrentSchema`](#setcurrentschemaparams) instead.
+
 **Parameters:**
 
 - `params.tableBucketARN` (string) - The ARN of the table bucket
@@ -101,9 +108,44 @@ const result = await addSchema({
 // result['metadata-location'] contains the S3 path to the new metadata file
 ```
 
+### setCurrentSchema(params)
+
+Sets an existing schema (by id) as the table's current schema. Use this to
+switch back to a schema already present in the table's history — for example to
+drop a column by reverting to the schema that existed before the column was
+added. Dropping to a field set that does not yet exist is done with
+[`addSchema`](#addschemaparams).
+
+**Parameters:**
+
+- `params.tableBucketARN` (string) - The ARN of the table bucket
+- `params.namespace` (string) - The namespace name
+- `params.name` (string) - The table name
+- `params.schemaId` (number) - The id of an existing schema to make current
+- `params.credentials` (AwsCredentialIdentity, optional) - AWS credentials
+
+**Returns:** Promise<IcebergUpdateResponse>
+
+```javascript
+const result = await setCurrentSchema({
+  tableBucketARN: 'arn:aws:s3tables:us-west-2:123456789012:bucket/my-bucket',
+  namespace: 'sales',
+  name: 'daily_sales',
+  schemaId: 0,
+});
+```
+
 ### addPartitionSpec(params)
 
 Adds a new partition specification to an S3 table and sets it as default.
+
+The spec must be new — S3 Tables rejects an `add-spec` whose fields are
+identical to a spec already in the table's history (including the initial
+unpartitioned spec). `specId` must be the next id after the highest existing
+one, and each new partition field's `field-id` must be above the table's
+current `last-partition-id`. To make an existing spec the default again (for
+example to revert to unpartitioned or to a previously used spec), use
+[`setDefaultSpec`](#setdefaultspecparams) instead.
 
 **Parameters:**
 
@@ -136,6 +178,33 @@ await addPartitionSpec({
       transform: 'identity',
     },
   ],
+});
+```
+
+### setDefaultSpec(params)
+
+Sets an existing partition spec (by id) as the table's default. Use this to
+switch back to a spec already present in the table's history — for example to
+revert to the unpartitioned spec (`specId: 0`) or to a previously used spec.
+Partitioning by a layout that does not yet exist is done with
+[`addPartitionSpec`](#addpartitionspecparams).
+
+**Parameters:**
+
+- `params.tableBucketARN` (string) - The ARN of the table bucket
+- `params.namespace` (string) - The namespace name
+- `params.name` (string) - The table name
+- `params.specId` (number) - The id of an existing partition spec to make default
+- `params.credentials` (AwsCredentialIdentity, optional) - AWS credentials
+
+**Returns:** Promise<IcebergUpdateResponse>
+
+```javascript
+const result = await setDefaultSpec({
+  tableBucketARN: 'arn:aws:s3tables:us-west-2:123456789012:bucket/my-bucket',
+  namespace: 'sales',
+  name: 'daily_sales',
+  specId: 0,
 });
 ```
 

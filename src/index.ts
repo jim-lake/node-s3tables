@@ -4,7 +4,9 @@ import { addManifest } from './manifest';
 import {
   getMetadata,
   addSchema,
+  setCurrentSchema,
   addPartitionSpec,
+  setDefaultSpec,
   removeSnapshots,
 } from './metadata';
 import { IcebergHttpError } from './request';
@@ -42,7 +44,9 @@ export type { ManifestListRecord } from './avro_types';
 export default {
   IcebergHttpError,
   addSchema,
+  setCurrentSchema,
   addPartitionSpec,
+  setDefaultSpec,
   addManifest,
   addDataFiles,
   getMetadata,
