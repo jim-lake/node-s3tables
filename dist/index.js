@@ -1579,6 +1579,18 @@ async function addSchema(params) {
         },
     });
 }
+async function setCurrentSchema(params) {
+    return icebergRequest({
+        config: resolveAwsConfig(params),
+        tableBucketARN: params.tableBucketARN,
+        method: 'POST',
+        suffix: `/namespaces/${params.namespace}/tables/${params.name}`,
+        body: {
+            requirements: [],
+            updates: [{ action: 'set-current-schema', 'schema-id': params.schemaId }],
+        },
+    });
+}
 async function addPartitionSpec(params) {
     return icebergRequest({
         config: resolveAwsConfig(params),
@@ -1598,6 +1610,18 @@ async function addPartitionSpec(params) {
                 },
                 { action: 'set-default-spec', 'spec-id': params.specId },
             ],
+        },
+    });
+}
+async function setDefaultSpec(params) {
+    return icebergRequest({
+        config: resolveAwsConfig(params),
+        tableBucketARN: params.tableBucketARN,
+        method: 'POST',
+        suffix: `/namespaces/${params.namespace}/tables/${params.name}`,
+        body: {
+            requirements: [],
+            updates: [{ action: 'set-default-spec', 'spec-id': params.specId }],
         },
     });
 }
@@ -2616,7 +2640,9 @@ function _bigintMin(value0, ...values) {
 var index = {
     IcebergHttpError,
     addSchema,
+    setCurrentSchema,
     addPartitionSpec,
+    setDefaultSpec,
     addManifest,
     addDataFiles,
     getMetadata,
@@ -2646,4 +2672,6 @@ exports.removeSnapshots = removeSnapshots;
 exports.resolveAwsConfig = resolveAwsConfig;
 exports.resolveS3TablesHost = resolveS3TablesHost;
 exports.setCurrentCommit = setCurrentCommit;
+exports.setCurrentSchema = setCurrentSchema;
+exports.setDefaultSpec = setDefaultSpec;
 exports.submitSnapshot = submitSnapshot;

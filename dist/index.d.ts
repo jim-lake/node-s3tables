@@ -238,6 +238,13 @@ interface IcebergUpdateResponse {
     'metadata-location': string;
 }
 declare function addSchema(params: AddSchemaParams): Promise<IcebergUpdateResponse>;
+interface SetCurrentSchemaParams extends AwsConfigParams {
+    tableBucketARN: string;
+    namespace: string;
+    name: string;
+    schemaId: number;
+}
+declare function setCurrentSchema(params: SetCurrentSchemaParams): Promise<IcebergUpdateResponse>;
 interface AddPartitionSpecParams extends AwsConfigParams {
     tableBucketARN: string;
     namespace: string;
@@ -246,6 +253,13 @@ interface AddPartitionSpecParams extends AwsConfigParams {
     fields: IcebergPartitionField[];
 }
 declare function addPartitionSpec(params: AddPartitionSpecParams): Promise<IcebergUpdateResponse>;
+interface SetDefaultSpecParams extends AwsConfigParams {
+    tableBucketARN: string;
+    namespace: string;
+    name: string;
+    specId: number;
+}
+declare function setDefaultSpec(params: SetDefaultSpecParams): Promise<IcebergUpdateResponse>;
 interface RemoveSnapshotsParams extends AwsConfigParams {
     tableBucketARN: string;
     namespace: string;
@@ -344,7 +358,9 @@ declare function manifestCompact(params: ManifestCompactParams): Promise<Manifes
 declare const _default: {
     IcebergHttpError: typeof IcebergHttpError;
     addSchema: typeof addSchema;
+    setCurrentSchema: typeof setCurrentSchema;
     addPartitionSpec: typeof addPartitionSpec;
+    setDefaultSpec: typeof setDefaultSpec;
     addManifest: typeof addManifest;
     addDataFiles: typeof addDataFiles;
     getMetadata: typeof getMetadata;
@@ -353,5 +369,5 @@ declare const _default: {
     setCurrentCommit: typeof setCurrentCommit;
 };
 
-export { IcebergHttpError, ManifestListSchema, addDataFiles, addManifest, addPartitionSpec, addSchema, _default as default, downloadAvro, getMetadata, getMetadataWithConfig, getS3Client, getS3TablesClient, importRedshiftManifest, manifestCompact, maxBuffer, minBuffer, parseS3Url, removeSnapshots, resolveAwsConfig, resolveS3TablesHost, setCurrentCommit, submitSnapshot };
-export type { AddDataFilesParams, AddDataFilesResult, AddFile, AddFileList, AddManifestParams, AddPartitionSpecParams, AddSchemaParams, AwsConfig, AwsConfigParams, CalculateWeightFunction, GetMetadataParams, IcebergComplexType, IcebergMetadata, IcebergPartitionField, IcebergPartitionSpec, IcebergPrimitiveType, IcebergSchema, IcebergSchemaField, IcebergSnapshot, IcebergSnapshotSummary, IcebergTransform, IcebergType, IcebergUpdateResponse, ImportRedshiftManifestParams, ImportRedshiftManifestResult, ManifestCompactParams, ManifestCompactResult, ManifestListRecord, RemoveSnapshotsParams, ResolveConflictResult, SetCurrentCommitParams, SubmitSnapshotParams, SubmitSnapshotResult, TableLocation };
+export { IcebergHttpError, ManifestListSchema, addDataFiles, addManifest, addPartitionSpec, addSchema, _default as default, downloadAvro, getMetadata, getMetadataWithConfig, getS3Client, getS3TablesClient, importRedshiftManifest, manifestCompact, maxBuffer, minBuffer, parseS3Url, removeSnapshots, resolveAwsConfig, resolveS3TablesHost, setCurrentCommit, setCurrentSchema, setDefaultSpec, submitSnapshot };
+export type { AddDataFilesParams, AddDataFilesResult, AddFile, AddFileList, AddManifestParams, AddPartitionSpecParams, AddSchemaParams, AwsConfig, AwsConfigParams, CalculateWeightFunction, GetMetadataParams, IcebergComplexType, IcebergMetadata, IcebergPartitionField, IcebergPartitionSpec, IcebergPrimitiveType, IcebergSchema, IcebergSchemaField, IcebergSnapshot, IcebergSnapshotSummary, IcebergTransform, IcebergType, IcebergUpdateResponse, ImportRedshiftManifestParams, ImportRedshiftManifestResult, ManifestCompactParams, ManifestCompactResult, ManifestListRecord, RemoveSnapshotsParams, ResolveConflictResult, SetCurrentCommitParams, SetCurrentSchemaParams, SetDefaultSpecParams, SubmitSnapshotParams, SubmitSnapshotResult, TableLocation };
